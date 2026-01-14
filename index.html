@@ -1,0 +1,2088 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pflanzenlog</title>
+
+    <style>
+      :root {
+        --bg0: #06150f;
+        --bg1: #0b2418;
+        --bg2: #0f3523;
+        --glow1: rgba(34, 197, 94, 0.22);
+        --glow2: rgba(132, 204, 22, 0.18);
+
+        --card: rgba(255, 255, 255, 0.14);
+        --card2: rgba(255, 255, 255, 0.1);
+        --stroke: rgba(255, 255, 255, 0.22);
+
+        --text: #ecfdf5;
+        --muted: rgba(236, 253, 245, 0.7);
+
+        --waterA: #38bdf8;
+        --waterB: #2563eb;
+
+        --fertA: #34d399;
+        --fertB: #16a34a;
+
+        --noteA: #fbbf24;
+        --noteB: #f97316;
+
+        --dangerA: #fb7185;
+        --dangerB: #ef4444;
+
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+        --soft: 0 10px 26px rgba(0, 0, 0, 0.4);
+
+        --r2: 22px;
+
+        --font: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial,
+          "Apple Color Emoji", "Segoe UI Emoji";
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: var(--font);
+        margin: 16px;
+        color: var(--text);
+        background: radial-gradient(
+            900px 600px at 15% 10%,
+            var(--glow1),
+            transparent 60%
+          ),
+          radial-gradient(800px 500px at 85% 20%, var(--glow2), transparent 55%),
+          radial-gradient(
+            900px 600px at 50% 110%,
+            rgba(20, 184, 166, 0.12),
+            transparent 60%
+          ),
+          linear-gradient(180deg, var(--bg0), var(--bg1) 35%, var(--bg2));
+      }
+
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.4px;
+        margin: 8px 0 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      h1 .leaf {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: var(--soft);
+      }
+      h2 {
+        font-size: 18px;
+        margin: 10px 0;
+      }
+      h3 {
+        font-size: 16px;
+        margin: 10px 0;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 10px;
+      }
+
+      .card,
+      .top-bar,
+      .bottom-bar {
+        background: linear-gradient(180deg, var(--card), var(--card2));
+        border: 1px solid var(--stroke);
+        border-radius: var(--r2);
+        padding: 14px;
+        box-shadow: var(--soft);
+        backdrop-filter: blur(16px) saturate(140%);
+        -webkit-backdrop-filter: blur(16px) saturate(140%);
+      }
+
+      .top-bar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        margin-bottom: 12px;
+      }
+      .bottom-bar {
+        position: sticky;
+        bottom: 0;
+        z-index: 20;
+        margin-top: 12px;
+      }
+
+      #output {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 14px;
+        min-height: 18px;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        font-size: 16px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text);
+        outline: none;
+      }
+      textarea {
+        min-height: 110px;
+        resize: vertical;
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: rgba(236, 253, 245, 0.55);
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        border-color: rgba(34, 197, 94, 0.55);
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+      }
+
+      button {
+        font-size: 16px;
+        padding: 12px 18px;
+        border-radius: 999px;
+        border: 0;
+        cursor: pointer;
+        color: #fff;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+        box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.28),
+          0 10px 22px rgba(0, 0, 0, 0.45);
+        transition: transform 0.1s ease, filter 0.15s ease,
+          box-shadow 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button:active {
+        transform: translateY(2px) scale(0.99);
+        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+          0 6px 16px rgba(0, 0, 0, 0.4);
+      }
+      button:hover {
+        filter: brightness(1.06) saturate(1.08);
+      }
+
+      .btn-water {
+        background: linear-gradient(135deg, var(--waterA), var(--waterB));
+      }
+      .btn-fert {
+        background: linear-gradient(135deg, var(--fertA), var(--fertB));
+      }
+      .btn-note {
+        background: linear-gradient(135deg, var(--noteA), var(--noteB));
+      }
+
+      .btn-ghost {
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+      }
+      .btn-danger {
+        background: linear-gradient(135deg, var(--dangerA), var(--dangerB));
+      }
+
+      #calendar {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 12px;
+        margin-top: 12px;
+      }
+      .cal-head {
+        font-weight: 800;
+        font-size: 12px;
+        color: rgba(236, 253, 245, 0.7);
+        text-align: center;
+        padding: 2px 4px;
+      }
+
+      .day-btn {
+        appearance: none;
+        -webkit-appearance: none;
+
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 22px;
+        padding: 12px;
+        min-height: 92px;
+
+        background: rgba(255, 255, 255, 0.13);
+        color: var(--text);
+        text-align: left;
+
+        backdrop-filter: blur(14px) saturate(140%);
+        -webkit-backdrop-filter: blur(14px) saturate(140%);
+
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          0 14px 28px rgba(0, 0, 0, 0.42);
+
+        transition: transform 0.1s ease, box-shadow 0.14s ease,
+          filter 0.14s ease;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .day-btn:active {
+        transform: translateY(2px) scale(0.985);
+        filter: brightness(0.98);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
+          0 9px 18px rgba(0, 0, 0, 0.36);
+      }
+      .day-btn:focus-visible {
+        outline: none;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          0 14px 28px rgba(0, 0, 0, 0.42), 0 0 0 3px rgba(34, 197, 94, 0.3);
+      }
+
+      .day-btn.today {
+        border-color: rgba(251, 191, 36, 0.35);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          0 14px 28px rgba(0, 0, 0, 0.42), 0 0 0 3px rgba(251, 191, 36, 0.18);
+      }
+      .day-btn.selected {
+        border-color: rgba(34, 197, 94, 0.45);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          0 14px 28px rgba(0, 0, 0, 0.42), 0 0 0 3px rgba(34, 197, 94, 0.22);
+      }
+      .today-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 900;
+        padding: 3px 8px;
+        border-radius: 999px;
+        margin-left: 8px;
+        background: rgba(251, 191, 36, 0.18);
+        border: 1px solid rgba(251, 191, 36, 0.3);
+        color: rgba(236, 253, 245, 0.95);
+      }
+
+      .badges {
+        margin-top: 8px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        font-size: 12px;
+      }
+      .badge {
+        border-radius: 999px;
+        padding: 4px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.12);
+        color: rgba(236, 253, 245, 0.92);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        line-height: 1;
+      }
+
+      .badge.b-total {
+        background: rgba(236, 253, 245, 0.14);
+        border-color: rgba(236, 253, 245, 0.22);
+      }
+      .badge.b-water {
+        background: rgba(56, 189, 248, 0.18);
+        border-color: rgba(56, 189, 248, 0.3);
+      }
+      .badge.b-fert {
+        background: rgba(52, 211, 153, 0.18);
+        border-color: rgba(52, 211, 153, 0.3);
+      }
+      .badge.b-comment {
+        background: rgba(251, 191, 36, 0.18);
+        border-color: rgba(251, 191, 36, 0.3);
+      }
+
+      .badge.comment-badge {
+        cursor: pointer;
+      }
+      .badge.big-comment {
+        font-size: 14px;
+        padding: 6px 12px;
+        transform: translateY(-1px);
+      }
+
+      dialog {
+        width: min(860px, 92vw);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 22px;
+        padding: 14px;
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.16),
+          rgba(255, 255, 255, 0.1)
+        );
+        color: var(--text);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        box-shadow: var(--shadow);
+      }
+      dialog::backdrop {
+        background: rgba(0, 0, 0, 0.55);
+      }
+
+      ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .plant-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 18px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        margin-top: 8px;
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.3);
+      }
+      .plant-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .checklist {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      .checkitem {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 18px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .checkitem input {
+        width: 20px;
+        height: 20px;
+        accent-color: #22c55e;
+      }
+
+      .comment-item {
+        margin-top: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 18px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.3);
+      }
+      .comment-item.pinned {
+        background: rgba(251, 191, 36, 0.16);
+        border-color: rgba(251, 191, 36, 0.28);
+      }
+
+      .comment-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+      .comment-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .comment-actions button {
+        padding: 10px 12px;
+        font-size: 14px;
+      }
+      .comment-text {
+        margin-top: 8px;
+        white-space: pre-wrap;
+        color: rgba(236, 253, 245, 0.92);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 14px;
+        background: rgba(255, 255, 255, 0.1);
+        color: rgba(236, 253, 245, 0.9);
+      }
+      .pill input {
+        width: 20px;
+        height: 20px;
+        accent-color: #fbbf24;
+      }
+
+      .status-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .pill-mini {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.1);
+        font-weight: 800;
+        font-size: 13px;
+        line-height: 1;
+      }
+      .pill-mini.water {
+        background: rgba(56, 189, 248, 0.16);
+        border-color: rgba(56, 189, 248, 0.28);
+      }
+      .pill-mini.fert {
+        background: rgba(52, 211, 153, 0.16);
+        border-color: rgba(52, 211, 153, 0.28);
+      }
+      .pill-mini.note {
+        background: rgba(251, 191, 36, 0.16);
+        border-color: rgba(251, 191, 36, 0.28);
+      }
+      .pill-mini.none {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.16);
+        opacity: 0.9;
+      }
+
+      .mini-label {
+        font-size: 13px;
+        font-weight: 800;
+        color: rgba(236, 253, 245, 0.82);
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1><span class="leaf">🌿</span> Pflanzenlog</h1>
+
+    <div class="top-bar">
+      <div class="row" style="margin-top: 0">
+        <button class="btn-water" onclick="openAction('water')">
+          💧 Gießen
+        </button>
+        <button class="btn-fert" onclick="openAction('fertilize')">
+          🧪 Düngen
+        </button>
+        <button class="btn-note" onclick="openCommentToday()">
+          📝 Kommentar (heute)
+        </button>
+      </div>
+      <p id="output"></p>
+    </div>
+
+    <div class="card">
+      <h2>Kalender</h2>
+
+      <div class="row" style="justify-content: space-between; margin-top: 0">
+        <button class="btn-ghost" onclick="prevMonth()">◀</button>
+        <strong id="monthTitle"></strong>
+        <button class="btn-ghost" onclick="nextMonth()">▶</button>
+      </div>
+
+      <div id="calendar"></div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="row" style="margin-top: 0; justify-content: space-between">
+        <button class="btn-ghost" onclick="openHistory()">
+          📜 Verlauf anzeigen
+        </button>
+        <button class="btn-ghost" onclick="openPlants()">
+          🪴 Pflanzen verwalten
+        </button>
+      </div>
+    </div>
+
+    <!-- 📅 Tagesansicht (Popup) -->
+    <dialog id="dayViewDialog">
+      <h2 id="dayViewTitle">📅 Tagesansicht</h2>
+
+      <!-- ✅ Schnell: für diesen Tag nachtragen -->
+      <div class="row" style="margin-top: 6px">
+        <button class="btn-water" onclick="openActionForSelectedDay('water')">
+          💧 Gießen nachtragen
+        </button>
+        <button
+          class="btn-fert"
+          onclick="openActionForSelectedDay('fertilize')"
+        >
+          🧪 Düngen nachtragen
+        </button>
+      </div>
+
+      <div id="dayViewBody"></div>
+
+      <div class="comment-item" style="margin-top: 12px">
+        <b>➕ Kommentar hinzufügen</b>
+
+        <div class="row" style="margin-top: 8px">
+          <select id="dayPopupCommentPlant" style="flex: 1"></select>
+        </div>
+
+        <textarea
+          id="dayPopupCommentText"
+          placeholder="Kommentar zu diesem Tag…"
+        ></textarea>
+
+        <div class="row" style="margin-top: 8px">
+          <label class="pill">
+            <input id="dayPopupCommentPinned" type="checkbox" />
+            📌 anpinnen
+          </label>
+          <button class="btn-note" onclick="saveDayCommentFromPopup()">
+            Speichern
+          </button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <button class="btn-ghost" onclick="closeDayView()">Schließen</button>
+      </div>
+    </dialog>
+
+    <!-- Verlauf -->
+    <dialog id="historyDialog">
+      <h2>Verlauf</h2>
+      <ul id="history"></ul>
+
+      <div class="row">
+        <button class="btn-danger" onclick="clearAll()">
+          🗑️ Alle Einträge löschen
+        </button>
+        <button class="btn-ghost" onclick="closeHistory()">Schließen</button>
+      </div>
+    </dialog>
+
+    <!-- Pflanzen verwalten -->
+    <dialog id="plantsDialog">
+      <h2>Pflanzen verwalten</h2>
+
+      <div class="row">
+        <input
+          id="newPlant"
+          placeholder="Neue Pflanze (z. B. Ficus)"
+          style="flex: 1"
+        />
+
+        <select id="newRoom" style="flex: 1">
+          <option>Wohnzimmer</option>
+          <option>Schlafzimmer</option>
+          <option>Flur</option>
+          <option>Büro</option>
+        </select>
+
+        <button class="btn-ghost" onclick="addPlant()">➕ Hinzufügen</button>
+      </div>
+
+      <div class="muted" style="margin-top: 8px">
+        Räume für neue Pflanzen: Wohnzimmer, Schlafzimmer, Flur, Büro.
+        <br />„Entfernte Pflanzen“ wird automatisch genutzt, wenn du Historie
+        behalten willst.
+      </div>
+
+      <div id="plantsList" style="margin-top: 12px"></div>
+
+      <div class="row" style="margin-top: 12px">
+        <button class="btn-ghost" onclick="closePlants()">Schließen</button>
+      </div>
+    </dialog>
+
+    <!-- 🏠 Raum ändern -->
+    <dialog id="roomDialog">
+      <h2>🏠 Raum ändern</h2>
+      <p class="muted" id="roomPlantLabel"></p>
+
+      <div class="row" style="margin-top: 6px">
+        <select id="roomSelect" style="flex: 1"></select>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <button class="btn-ghost" onclick="closeRoomDialog()">Abbrechen</button>
+        <button class="btn-note" onclick="saveRoomDialog()">Speichern</button>
+      </div>
+    </dialog>
+
+    <!-- Pflanze löschen -->
+    <dialog id="deletePlantDialog">
+      <h2>Pflanze löschen</h2>
+      <p id="deletePlantText"></p>
+
+      <div class="row" style="margin-top: 12px">
+        <button class="btn-ghost" onclick="deletePlantCancel()">
+          Abbrechen
+        </button>
+        <button class="btn-danger" onclick="deletePlantDeleteHistory()">
+          Historie löschen
+        </button>
+        <button class="btn-ghost" onclick="deletePlantKeepHistory()">
+          Historie behalten
+        </button>
+      </div>
+    </dialog>
+
+    <!-- ✅ Action Dialog (mit Datum) -->
+    <dialog id="actionDialog">
+      <h2 id="actionTitle"></h2>
+      <p class="muted" id="actionHint"></p>
+
+      <div class="comment-item" style="margin-top: 10px">
+        <div class="mini-label">📅 Datum (auch nachträglich möglich)</div>
+        <div class="row" style="margin-top: 8px">
+          <input id="actionDate" type="date" style="flex: 1" />
+          <button class="btn-ghost" onclick="setActionDateToday()">
+            Heute
+          </button>
+        </div>
+        <div class="muted" style="margin-top: 6px">
+          Tipp: Wenn du im Urlaub bist, trägst du hier einfach den Tag ein, an
+          dem gegossen/gedüngt wurde.
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 10px">
+        <button class="btn-ghost" onclick="selectAllPlants()">
+          ✅ Alle auswählen
+        </button>
+        <button class="btn-ghost" onclick="selectNonePlants()">
+          🚫 Keine auswählen
+        </button>
+      </div>
+
+      <div id="actionList" class="checklist"></div>
+
+      <div class="row" style="margin-top: 12px">
+        <button class="btn-ghost" onclick="cancelAction()">Abbrechen</button>
+        <button class="btn-note" onclick="confirmAction()">Speichern</button>
+      </div>
+    </dialog>
+
+    <!-- Kommentar Dialog (HEUTE) -->
+    <dialog id="commentDialog">
+      <h2>📝 Kommentar (heute)</h2>
+
+      <label for="commentPlant">Pflanze</label>
+      <div class="row" style="margin-top: 6px">
+        <select id="commentPlant" style="flex: 1"></select>
+      </div>
+
+      <label for="commentText" style="display: block; margin-top: 10px"
+        >Kommentar</label
+      >
+      <textarea
+        id="commentText"
+        placeholder="z. B. Blätter hängen, Erde trocken..."
+      ></textarea>
+
+      <div class="row" style="margin-top: 8px">
+        <label class="pill">
+          <input id="commentPinned" type="checkbox" />
+          📌 anpinnen
+        </label>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <button class="btn-ghost" onclick="closeComment()">Abbrechen</button>
+        <button class="btn-note" onclick="saveCommentToday()">Speichern</button>
+      </div>
+    </dialog>
+
+    <!-- 📝 Popup pro Tag (klickbares Badge im Kalender) -->
+    <dialog id="dayCommentsDialog">
+      <h2 id="dayCommentsTitle"></h2>
+
+      <div id="dayCommentsList"></div>
+
+      <h3 style="margin-top: 12px">➕ Neuer Kommentar für diesen Tag</h3>
+
+      <div class="row" style="margin-top: 6px">
+        <select id="popupCommentPlant" style="flex: 1"></select>
+      </div>
+
+      <textarea id="popupCommentText" placeholder="Kommentar…"></textarea>
+
+      <div class="row" style="margin-top: 8px">
+        <label class="pill">
+          <input id="popupCommentPinned" type="checkbox" />
+          📌 anpinnen
+        </label>
+        <button class="btn-note" onclick="savePopupComment()">Speichern</button>
+        <button class="btn-ghost" onclick="closeDayComments()">
+          Schließen
+        </button>
+      </div>
+    </dialog>
+
+    <script>
+      const STORAGE_KEY = "pflanzenlog_entries_v12";
+      const PLANTS_KEY = "pflanzenlog_plants_v3_rooms_active";
+
+      const ROOMS_BASE = ["Wohnzimmer", "Schlafzimmer", "Flur", "Büro"];
+      const REMOVED_ROOM = "Entfernte Pflanzen";
+      const ROOMS_ALL = [...ROOMS_BASE, REMOVED_ROOM];
+
+      const state = { viewMonth: new Date(), selectedISO: isoDate(new Date()) };
+
+      let pendingPlantToDelete = null;
+      let pendingAction = null;
+      let popupISO = null;
+
+      let pendingRoomPlant = null;
+
+      // ✅ Action dialog date (for backdating)
+      let actionISO = isoDate(new Date());
+
+      function isoDate(d) {
+        const x = new Date(d);
+        const y = x.getFullYear();
+        const m = String(x.getMonth() + 1).padStart(2, "0");
+        const day = String(x.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      }
+      const uniq = (arr) => Array.from(new Set((arr || []).filter(Boolean)));
+      const setUnion = (a, b) => uniq([...(a || []), ...(b || [])]);
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+      function uuid() {
+        const now = Date.now();
+        return crypto?.randomUUID
+          ? crypto.randomUUID()
+          : String(now) + "_" + Math.random().toString(16).slice(2);
+      }
+      function isoToNoonTs(iso) {
+        const [y, m, d] = iso.split("-").map(Number);
+        return new Date(y, m - 1, d, 12, 0, 0).getTime();
+      }
+
+      function loadEntries() {
+        try {
+          return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+        } catch {
+          return [];
+        }
+      }
+      function saveEntries(entries) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+      }
+
+      function normalizePlant(p) {
+        const name = String(p?.name || "").trim();
+        if (!name) return null;
+        const roomRaw = String(p?.room || "Wohnzimmer").trim();
+        const room = ROOMS_ALL.includes(roomRaw) ? roomRaw : "Wohnzimmer";
+        const active = p?.active === false ? false : true;
+        return { name, room, active };
+      }
+
+      function migrateOldPlantsIfNeeded() {
+        try {
+          const v2 = JSON.parse(
+            localStorage.getItem("pflanzenlog_plants_v2_rooms")
+          );
+          if (Array.isArray(v2) && v2.length) {
+            const migrated = v2
+              .map((x) => normalizePlant({ ...x, active: true }))
+              .filter(Boolean);
+            localStorage.setItem(PLANTS_KEY, JSON.stringify(migrated));
+            return migrated;
+          }
+        } catch {}
+
+        try {
+          const v1 = JSON.parse(localStorage.getItem("pflanzenlog_plants_v1"));
+          if (Array.isArray(v1) && v1.length) {
+            const migrated =
+              typeof v1[0] === "string"
+                ? v1
+                    .map((name) =>
+                      normalizePlant({ name, room: "Wohnzimmer", active: true })
+                    )
+                    .filter(Boolean)
+                : v1
+                    .map((x) =>
+                      normalizePlant({
+                        name: x.name,
+                        room: "Wohnzimmer",
+                        active: true,
+                      })
+                    )
+                    .filter(Boolean);
+
+            localStorage.setItem(PLANTS_KEY, JSON.stringify(migrated));
+            return migrated;
+          }
+        } catch {}
+
+        const defaults = [
+          { name: "Monstera", room: "Wohnzimmer", active: true },
+          { name: "Orchidee", room: "Schlafzimmer", active: true },
+          { name: "Calathea", room: "Büro", active: true },
+          { name: "Pothos", room: "Flur", active: true },
+        ]
+          .map(normalizePlant)
+          .filter(Boolean);
+
+        localStorage.setItem(PLANTS_KEY, JSON.stringify(defaults));
+        return defaults;
+      }
+
+      function loadPlants() {
+        try {
+          const v3 = JSON.parse(localStorage.getItem(PLANTS_KEY));
+          if (Array.isArray(v3) && v3.length) {
+            return v3.map(normalizePlant).filter(Boolean);
+          }
+        } catch {}
+        return migrateOldPlantsIfNeeded();
+      }
+      function savePlants(plants) {
+        localStorage.setItem(
+          PLANTS_KEY,
+          JSON.stringify(plants.map(normalizePlant).filter(Boolean))
+        );
+      }
+
+      function getActivePlants() {
+        return loadPlants().filter(
+          (p) => p.active !== false && p.room !== REMOVED_ROOM
+        );
+      }
+      function getAllPlants() {
+        return loadPlants();
+      }
+      function activePlantNames() {
+        return getActivePlants().map((p) => p.name);
+      }
+
+      function groupPlantsByRoom(plants) {
+        const map = new Map();
+        plants.forEach((p) => {
+          const room = ROOMS_ALL.includes(p.room) ? p.room : "Wohnzimmer";
+          if (!map.has(room)) map.set(room, []);
+          map.get(room).push(p);
+        });
+        return ROOMS_ALL.map((r) => [
+          r,
+          (map.get(r) || []).sort((a, b) => a.name.localeCompare(b.name, "de")),
+        ]);
+      }
+
+      // ----- Plants UI -----
+      function renderPlants() {
+        const plants = getAllPlants();
+        const list = document.getElementById("plantsList");
+        list.innerHTML = "";
+
+        const grouped = groupPlantsByRoom(plants);
+
+        grouped.forEach(([room, ps]) => {
+          if (!ps.length) return;
+
+          const header = document.createElement("div");
+          header.className = "comment-item";
+          header.innerHTML =
+            `<b>🏠 ${escapeHtml(room)}</b>` +
+            (room === REMOVED_ROOM
+              ? `<div class="muted" style="margin-top:6px;">Diese Pflanzen bleiben für die Historie sichtbar.</div>`
+              : "");
+          list.appendChild(header);
+
+          ps.forEach((pObj) => {
+            const row = document.createElement("div");
+            row.className = "plant-row";
+
+            const left = document.createElement("div");
+            const inactiveHint =
+              pObj.active === false || pObj.room === REMOVED_ROOM
+                ? " (entfernt)"
+                : "";
+            left.innerHTML = `<b>${escapeHtml(
+              pObj.name
+            )}${inactiveHint}</b><div class="muted">🏠 ${escapeHtml(
+              pObj.room
+            )}</div>`;
+
+            const actions = document.createElement("div");
+            actions.className = "plant-actions";
+
+            const roomBtn = document.createElement("button");
+            roomBtn.className = "btn-ghost";
+            roomBtn.textContent = "🏠 Raum";
+            roomBtn.onclick = () => openRoomDialog(pObj.name);
+
+            const renameBtn = document.createElement("button");
+            renameBtn.className = "btn-ghost";
+            renameBtn.textContent = "✏️ Name";
+            renameBtn.onclick = () => renamePlant(pObj.name);
+
+            const delBtn = document.createElement("button");
+            delBtn.className = "btn-danger";
+            delBtn.textContent = "🗑️";
+            delBtn.onclick = () => removePlant(pObj.name);
+
+            actions.appendChild(roomBtn);
+            actions.appendChild(renameBtn);
+            actions.appendChild(delBtn);
+
+            row.appendChild(left);
+            row.appendChild(actions);
+            list.appendChild(row);
+          });
+        });
+      }
+
+      function addPlant() {
+        const inp = document.getElementById("newPlant");
+        const roomSel = document.getElementById("newRoom");
+
+        const name = (inp.value || "").trim();
+        const room = (roomSel?.value || "Wohnzimmer").trim();
+        if (!name) return;
+
+        const plants = getAllPlants();
+        if (plants.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+          document.getElementById("output").textContent =
+            "Diese Pflanze gibt’s schon 🙂";
+          return;
+        }
+
+        plants.unshift({
+          name,
+          room: ROOMS_BASE.includes(room) ? room : "Wohnzimmer",
+          active: true,
+        });
+        savePlants(plants);
+
+        inp.value = "";
+        roomSel.value = "Wohnzimmer";
+
+        document.getElementById(
+          "output"
+        ).textContent = `✅ Pflanze hinzugefügt: ${name} (${room})`;
+        renderAll();
+      }
+
+      function renamePlant(oldName) {
+        const newName = prompt(`Neuer Name für „${oldName}“:`, oldName);
+        if (newName === null) return;
+        const cleaned = newName.trim();
+        if (!cleaned) return;
+
+        const plants = getAllPlants();
+        if (
+          plants.some(
+            (p) =>
+              p.name.toLowerCase() === cleaned.toLowerCase() &&
+              p.name !== oldName
+          )
+        ) {
+          document.getElementById("output").textContent =
+            "Name existiert schon 🙂";
+          return;
+        }
+
+        savePlants(
+          plants.map((p) => (p.name === oldName ? { ...p, name: cleaned } : p))
+        );
+
+        const entries = loadEntries().map((e) =>
+          renamePlantInEntry(e, oldName, cleaned)
+        );
+        saveEntries(entries);
+
+        document.getElementById(
+          "output"
+        ).textContent = `✅ Umbenannt: ${oldName} → ${cleaned}`;
+        renderAll();
+      }
+
+      function renamePlantInEntry(e, oldName, newName) {
+        if (!e) return e;
+
+        if (e.type === "batch") {
+          const repl = (arr) =>
+            Array.isArray(arr)
+              ? arr.map((x) => (x === oldName ? newName : x))
+              : arr;
+          return { ...e, snapshot: repl(e.snapshot), done: repl(e.done) };
+        }
+        if (e.type === "comment") {
+          if (e.plant === oldName) return { ...e, plant: newName };
+          return e;
+        }
+        return e;
+      }
+
+      // Room dialog
+      function openRoomDialog(name) {
+        pendingRoomPlant = name;
+        const plants = getAllPlants();
+        const current = plants.find((p) => p.name === name);
+        document.getElementById(
+          "roomPlantLabel"
+        ).textContent = `Pflanze: ${name}`;
+
+        const sel = document.getElementById("roomSelect");
+        sel.innerHTML = "";
+        ROOMS_ALL.forEach((r) => {
+          const opt = document.createElement("option");
+          opt.value = r;
+          opt.textContent = r;
+          sel.appendChild(opt);
+        });
+        sel.value = ROOMS_ALL.includes(current?.room)
+          ? current.room
+          : "Wohnzimmer";
+
+        const dlg = document.getElementById("roomDialog");
+        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+      }
+      function closeRoomDialog() {
+        pendingRoomPlant = null;
+        const dlg = document.getElementById("roomDialog");
+        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+      }
+      function saveRoomDialog() {
+        if (!pendingRoomPlant) return;
+        const room = document.getElementById("roomSelect").value;
+
+        const plants = getAllPlants();
+        savePlants(
+          plants.map((p) => {
+            if (p.name !== pendingRoomPlant) return p;
+            const nextRoom = ROOMS_ALL.includes(room) ? room : "Wohnzimmer";
+            const nextActive = nextRoom === REMOVED_ROOM ? false : true;
+            return { ...p, room: nextRoom, active: nextActive };
+          })
+        );
+
+        document.getElementById(
+          "output"
+        ).textContent = `🏠 Raum gesetzt: ${pendingRoomPlant} → ${room}`;
+        closeRoomDialog();
+        renderAll();
+      }
+
+      function removePlant(name) {
+        const plants = getAllPlants();
+        const activeCount = getActivePlants().length;
+        const target = plants.find((p) => p.name === name);
+        const isActive =
+          target && target.active !== false && target.room !== REMOVED_ROOM;
+        if (isActive && activeCount <= 1) {
+          document.getElementById("output").textContent =
+            "Mindestens 1 aktive Pflanze behalten 🙂";
+          return;
+        }
+        pendingPlantToDelete = name;
+        openDeletePlantDialog(name);
+      }
+
+      // ----- Delete Plant Dialog -----
+      function openDeletePlantDialog(plantName) {
+        document.getElementById(
+          "deletePlantText"
+        ).textContent = `Was soll mit der Historie von „${plantName}“ passieren?`;
+        const dlg = document.getElementById("deletePlantDialog");
+        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+      }
+      function closeDeletePlantDialog() {
+        const dlg = document.getElementById("deletePlantDialog");
+        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+      }
+      function deletePlantCancel() {
+        pendingPlantToDelete = null;
+        closeDeletePlantDialog();
+        document.getElementById("output").textContent =
+          "Abgebrochen – nichts geändert.";
+      }
+
+      function deletePlantKeepHistory() {
+        if (!pendingPlantToDelete) return;
+        const name = pendingPlantToDelete;
+
+        const plants = getAllPlants();
+        savePlants(
+          plants.map((p) => {
+            if (p.name !== name) return p;
+            return { ...p, room: REMOVED_ROOM, active: false };
+          })
+        );
+
+        pendingPlantToDelete = null;
+        closeDeletePlantDialog();
+        document.getElementById(
+          "output"
+        ).textContent = `✅ „${name}“ wurde zu „${REMOVED_ROOM}“ verschoben (Historie bleibt).`;
+        renderAll();
+      }
+
+      function deletePlantDeleteHistory() {
+        if (!pendingPlantToDelete) return;
+        const name = pendingPlantToDelete;
+
+        savePlants(getAllPlants().filter((p) => p.name !== name));
+
+        const entries = loadEntries();
+        const cleaned = entries
+          .map((e) => removePlantFromEntry(e, name))
+          .filter((e) => e !== null);
+        saveEntries(cleaned);
+
+        pendingPlantToDelete = null;
+        closeDeletePlantDialog();
+        document.getElementById(
+          "output"
+        ).textContent = `🗑️ Pflanze + Historie gelöscht: ${name}`;
+        renderAll();
+      }
+
+      function removePlantFromEntry(e, name) {
+        if (!e) return e;
+
+        if (e.type === "batch") {
+          const filt = (arr) =>
+            Array.isArray(arr) ? arr.filter((x) => x !== name) : arr;
+          const next = { ...e, snapshot: filt(e.snapshot), done: filt(e.done) };
+          const doneLen = Array.isArray(next.done) ? next.done.length : 0;
+          if (doneLen === 0) return null;
+          return next;
+        }
+        if (e.type === "comment") return e.plant === name ? null : e;
+        return e;
+      }
+
+      // ----- Aggregation per day -----
+      function aggregateDay(entries, iso) {
+        const res = {
+          water: { snapshot: [], done: [] },
+          fertilize: { snapshot: [], done: [] },
+          comments: [],
+        };
+
+        const dayEntries = entries.filter((e) => isoDate(e.ts) === iso);
+
+        dayEntries.forEach((e) => {
+          if (e.type === "batch") {
+            if (e.action === "water") {
+              res.water.snapshot = setUnion(res.water.snapshot, e.snapshot);
+              res.water.done = setUnion(res.water.done, e.done);
+            }
+            if (e.action === "fertilize") {
+              res.fertilize.snapshot = setUnion(
+                res.fertilize.snapshot,
+                e.snapshot
+              );
+              res.fertilize.done = setUnion(res.fertilize.done, e.done);
+            }
+          } else if (e.type === "comment") {
+            res.comments.push({
+              id: e.id,
+              plant: e.plant || "Unbekannt",
+              text: e.text || "",
+              ts: e.ts,
+              pinned: !!e.pinned,
+            });
+          }
+        });
+
+        res.water.snapshot = uniq(res.water.snapshot);
+        res.water.done = uniq(res.water.done);
+
+        res.fertilize.snapshot = uniq(res.fertilize.snapshot);
+        res.fertilize.done = uniq(res.fertilize.done);
+
+        res.comments.sort((a, b) => b.pinned - a.pinned || b.ts - a.ts);
+        return res;
+      }
+
+      // ----- History -----
+      function renderHistory(entries) {
+        const historyEl = document.getElementById("history");
+        historyEl.innerHTML = "";
+
+        if (!entries.length) {
+          const li = document.createElement("li");
+          li.textContent = "Noch keine Einträge.";
+          historyEl.appendChild(li);
+          return;
+        }
+
+        const days = uniq(entries.map((e) => isoDate(e.ts))).sort((a, b) =>
+          a < b ? 1 : -1
+        );
+        const total = getActivePlants().length;
+
+        days.forEach((iso) => {
+          const agg = aggregateDay(entries, iso);
+          const parts = [];
+          parts.push(`🌿${total}`);
+          if (agg.water.done.length) parts.push(`💧${agg.water.done.length}`);
+          if (agg.fertilize.done.length)
+            parts.push(`🧪${agg.fertilize.done.length}`);
+          if (agg.comments.length) parts.push(`📝${agg.comments.length}`);
+
+          const li = document.createElement("li");
+          li.textContent = `${iso}: ${parts.join("  •  ")}`;
+          historyEl.appendChild(li);
+        });
+      }
+
+      function openHistory() {
+        const dlg = document.getElementById("historyDialog");
+        renderAll();
+        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+      }
+      function closeHistory() {
+        const dlg = document.getElementById("historyDialog");
+        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+      }
+
+      function openPlants() {
+        const dlg = document.getElementById("plantsDialog");
+        renderPlants();
+        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+      }
+      function closePlants() {
+        const dlg = document.getElementById("plantsDialog");
+        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+      }
+
+      // ----- ✅ Action Dialog (Smart Default + Datum/Nachtragen) -----
+      function setActionDateToday() {
+        const today = isoDate(new Date());
+        document.getElementById("actionDate").value = today;
+        actionISO = today;
+        refreshActionListForDate();
+      }
+
+      // ✅ open action with a specific date (used by Day Popup buttons)
+      function openActionWithDate(action, iso) {
+        pendingAction = action;
+
+        document.getElementById("actionTitle").textContent =
+          action === "water"
+            ? "💧 Gießen – welche Pflanzen?"
+            : "🧪 Düngen – welche Pflanzen?";
+
+        actionISO = iso || isoDate(new Date());
+        const dateEl = document.getElementById("actionDate");
+        dateEl.value = actionISO;
+
+        dateEl.onchange = () => {
+          actionISO = dateEl.value || isoDate(new Date());
+          refreshActionListForDate();
+        };
+
+        refreshActionListForDate();
+
+        const dlg = document.getElementById("actionDialog");
+        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+      }
+
+      function openAction(action) {
+        openActionWithDate(action, isoDate(new Date()));
+      }
+
+      function refreshActionListForDate() {
+        const entries = loadEntries();
+        const agg = aggregateDay(entries, actionISO);
+        const alreadyDone =
+          pendingAction === "water" ? agg.water.done : agg.fertilize.done;
+
+        const hint = document.getElementById("actionHint");
+        hint.textContent = alreadyDone.length
+          ? `Smart-Default: an diesem Datum schon geloggt (${alreadyDone.length}) ist abgewählt.`
+          : "Smart-Default: alle Pflanzen sind ausgewählt.";
+
+        const list = document.getElementById("actionList");
+        list.innerHTML = "";
+
+        const plants = getActivePlants();
+        plants.forEach((pObj, idx) => {
+          const p = pObj.name;
+          const row = document.createElement("label");
+          row.className = "checkitem";
+
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.dataset.plant = p;
+          cb.id = "cb_" + idx;
+          cb.checked = !alreadyDone.includes(p);
+
+          const text = document.createElement("span");
+          text.textContent = `${p} (${pObj.room || "Wohnzimmer"})`;
+
+          row.appendChild(cb);
+          row.appendChild(text);
+          list.appendChild(row);
+        });
+      }
+
+      function selectAllPlants() {
+        document
+          .querySelectorAll("#actionList input[type=checkbox]")
+          .forEach((cb) => (cb.checked = true));
+      }
+      function selectNonePlants() {
+        document
+          .querySelectorAll("#actionList input[type=checkbox]")
+          .forEach((cb) => (cb.checked = false));
+      }
+      function cancelAction() {
+        pendingAction = null;
+        closeActionDialog();
+        document.getElementById("output").textContent =
+          "Abgebrochen – nichts gespeichert.";
+      }
+      function closeActionDialog() {
+        const dlg = document.getElementById("actionDialog");
+        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+      }
+
+      function confirmAction() {
+        if (!pendingAction) return;
+
+        const selected = Array.from(
+          document.querySelectorAll("#actionList input[type=checkbox]")
+        )
+          .filter((cb) => cb.checked)
+          .map((cb) => cb.dataset.plant);
+
+        if (selected.length === 0) {
+          document.getElementById("output").textContent =
+            "Keine Pflanzen ausgewählt 🙂";
+          return;
+        }
+
+        const iso = actionISO || isoDate(new Date());
+        const ts = isoToNoonTs(iso);
+        const dateStr = new Date(ts).toLocaleDateString("de-DE");
+
+        const entries = loadEntries();
+        const idx = entries.findIndex(
+          (e) =>
+            e &&
+            e.type === "batch" &&
+            e.action === pendingAction &&
+            isoDate(e.ts) === iso
+        );
+
+        const snapshot = activePlantNames();
+
+        if (idx >= 0) {
+          const existing = entries[idx];
+          const mergedSnapshot = setUnion(existing.snapshot, snapshot);
+          const mergedDone = setUnion(existing.done, selected);
+
+          entries[idx] = {
+            ...existing,
+            ts,
+            date: dateStr,
+            snapshot: mergedSnapshot,
+            done: mergedDone,
+          };
+        } else {
+          entries.unshift({
+            type: "batch",
+            action: pendingAction,
+            ts,
+            date: dateStr,
+            snapshot: uniq(snapshot),
+            done: uniq(selected),
+          });
+        }
+
+        saveEntries(entries);
+
+        document.getElementById("output").textContent = `${
+          pendingAction === "water" ? "💧" : "🧪"
+        } gespeichert für ${iso.split("-").reverse().join(".")}: ${
+          selected.length
+        } Pflanze(n) ✅`;
+
+        state.selectedISO = iso;
+
+        pendingAction = null;
+        closeActionDialog();
+        renderAll();
+      }
+
+      // ----- Comments -----
+      function fillCommentPlants(selectElId, includeRemoved = true) {
+        const plants = includeRemoved ? getAllPlants() : getActivePlants();
+        const sel = document.getElementById(selectElId);
+        sel.innerHTML = "";
+        plants.forEach((p) => {
+          const opt = document.createElement("option");
+          opt.value = p.name;
+          const removedTag =
+            p.room === REMOVED_ROOM || p.active === false ? " • entfernt" : "";
+          opt.textContent = `${p.name} (${p.room})${removedTag}`;
+          sel.appendChild(opt);
+        });
+      }
+
+      function openCommentToday() {
+        fillCommentPlants("commentPlant", true);
+        document.getElementById("commentText").value = "";
+        document.getElementById("commentPinned").checked = false;
+
+        const dlg = document.getElementById("commentDialog");
+        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+      }
+      function closeComment() {
+        const dlg = document.getElementById("commentDialog");
+        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+      }
+
+      function saveCommentForISO(iso, plant, text, pinned) {
+        const ts = isoToNoonTs(iso);
+        const entry = {
+          type: "comment",
+          id: uuid(),
+          ts,
+          date: new Date(ts).toLocaleDateString("de-DE"),
+          plant,
+          text,
+          pinned,
+        };
+        const entries = loadEntries();
+        entries.unshift(entry);
+        saveEntries(entries);
+      }
+
+      function saveCommentToday() {
+        const plant = (
+          document.getElementById("commentPlant").value || ""
+        ).trim();
+        const text = (
+          document.getElementById("commentText").value || ""
+        ).trim();
+        const pinned = !!document.getElementById("commentPinned").checked;
+
+        if (!plant) {
+          document.getElementById("output").textContent =
+            "Bitte eine Pflanze auswählen 🙂";
+          return;
+        }
+        if (!text) {
+          document.getElementById("output").textContent =
+            "Bitte einen Kommentar eingeben 🙂";
+          return;
+        }
+
+        const iso = isoDate(new Date());
+        saveCommentForISO(iso, plant, text, pinned);
+
+        state.selectedISO = iso;
+        document.getElementById("output").textContent =
+          "📝 Kommentar gespeichert ✅";
+        closeComment();
+        renderAll();
+      }
+
+      function saveDayCommentFromPopup() {
+        const plant = (
+          document.getElementById("dayPopupCommentPlant").value || ""
+        ).trim();
+        const text = (
+          document.getElementById("dayPopupCommentText").value || ""
+        ).trim();
+        const pinned = !!document.getElementById("dayPopupCommentPinned")
+          .checked;
+
+        if (!plant) {
+          document.getElementById("output").textContent =
+            "Bitte eine Pflanze auswählen 🙂";
+          return;
+        }
+        if (!text) {
+          document.getElementById("output").textContent =
+            "Bitte einen Kommentar eingeben 🙂";
+          return;
+        }
+
+        const iso = state.selectedISO;
+        saveCommentForISO(iso, plant, text, pinned);
+
+        document.getElementById("dayPopupCommentText").value = "";
+        document.getElementById("dayPopupCommentPinned").checked = false;
+
+        document.getElementById("output").textContent =
+          "📝 Kommentar zum Tag gespeichert ✅";
+        renderAll();
+        if (popupISO) renderDayCommentsPopup();
+        renderDayViewPopup();
+      }
+
+      function editComment(id) {
+        const entries = loadEntries();
+        const idx = entries.findIndex(
+          (e) => e && e.type === "comment" && e.id === id
+        );
+        if (idx < 0) return;
+
+        const current = entries[idx];
+        const newText = prompt(
+          `Kommentar für ${current.plant} bearbeiten:`,
+          current.text || ""
+        );
+        if (newText === null) return;
+
+        const cleaned = String(newText).trim();
+        if (!cleaned) {
+          alert("Kommentar darf nicht leer sein.");
+          return;
+        }
+
+        entries[idx] = { ...current, text: cleaned };
+        saveEntries(entries);
+
+        document.getElementById("output").textContent =
+          "📝 Kommentar aktualisiert ✅";
+        renderAll();
+        if (popupISO) renderDayCommentsPopup();
+        renderDayViewPopup();
+      }
+
+      function deleteComment(id) {
+        if (!confirm("Kommentar wirklich löschen?")) return;
+        const entries = loadEntries().filter(
+          (e) => !(e && e.type === "comment" && e.id === id)
+        );
+        saveEntries(entries);
+        document.getElementById("output").textContent =
+          "🗑️ Kommentar gelöscht.";
+        renderAll();
+        if (popupISO) renderDayCommentsPopup();
+        renderDayViewPopup();
+      }
+
+      function togglePinComment(id) {
+        const entries = loadEntries();
+        const idx = entries.findIndex(
+          (e) => e && e.type === "comment" && e.id === id
+        );
+        if (idx < 0) return;
+        entries[idx] = { ...entries[idx], pinned: !entries[idx].pinned };
+        saveEntries(entries);
+        renderAll();
+        if (popupISO) renderDayCommentsPopup();
+        renderDayViewPopup();
+      }
+
+      // ----- Calendar counts -----
+      function buildCounts(entries) {
+        const map = new Map();
+        const days = uniq(entries.map((e) => isoDate(e.ts)));
+
+        days.forEach((iso) => {
+          const agg = aggregateDay(entries, iso);
+          map.set(iso, {
+            hasAny:
+              (agg.water.done?.length || 0) > 0 ||
+              (agg.fertilize.done?.length || 0) > 0 ||
+              (agg.comments?.length || 0) > 0,
+            waterDone: new Set(agg.water.done || []),
+            fertDone: new Set(agg.fertilize.done || []),
+            commentsCount: agg.comments.length || 0,
+          });
+        });
+
+        return map;
+      }
+
+      function openDayCommentsFromBadge(evt, iso) {
+        if (evt) evt.stopPropagation();
+        openDayComments(iso);
+      }
+
+      // ----- Day view popup -----
+      function openDayView(iso) {
+        state.selectedISO = iso;
+        const title = document.getElementById("dayViewTitle");
+        title.textContent = `📅 Tagesansicht – ${iso
+          .split("-")
+          .reverse()
+          .join(".")}`;
+
+        fillCommentPlants("dayPopupCommentPlant", true);
+
+        renderDayViewPopup();
+        const dlg = document.getElementById("dayViewDialog");
+        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+      }
+      function closeDayView() {
+        const dlg = document.getElementById("dayViewDialog");
+        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+      }
+
+      // ✅ Buttons in day popup
+      function openActionForSelectedDay(action) {
+        openActionWithDate(action, state.selectedISO);
+      }
+
+      function pillMini(text, cls) {
+        return `<span class="pill-mini ${cls}">${text}</span>`;
+      }
+
+      function renderDayViewPopup() {
+        const body = document.getElementById("dayViewBody");
+        body.innerHTML = "";
+
+        const entries = loadEntries();
+        const iso = state.selectedISO;
+        const agg = aggregateDay(entries, iso);
+
+        const waterDone = new Set(agg.water.done || []);
+        const fertDone = new Set(agg.fertilize.done || []);
+
+        const commentsByPlant = new Map();
+        (agg.comments || []).forEach((c) => {
+          const k = c.plant || "Unbekannt";
+          commentsByPlant.set(k, (commentsByPlant.get(k) || 0) + 1);
+        });
+
+        const relevantNames = new Set(
+          [
+            ...(agg.water.snapshot || []),
+            ...(agg.fertilize.snapshot || []),
+            ...(agg.water.done || []),
+            ...(agg.fertilize.done || []),
+            ...(agg.comments || []).map((c) => c.plant),
+          ].filter(Boolean)
+        );
+
+        function statusPillsFor(name) {
+          const pills = [];
+          if (waterDone.has(name)) pills.push(pillMini("💧", "water"));
+          if (fertDone.has(name)) pills.push(pillMini("🧪", "fert"));
+
+          const cc = commentsByPlant.get(name) || 0;
+          if (cc) pills.push(pillMini(`📝${cc}`, "note"));
+
+          if (!waterDone.has(name) && !fertDone.has(name))
+            pills.unshift(pillMini("—", "none"));
+          return pills.join("");
+        }
+
+        const all = getAllPlants();
+        const active = all.filter(
+          (p) => p.active !== false && p.room !== REMOVED_ROOM
+        );
+        const removed = all.filter(
+          (p) => p.room === REMOVED_ROOM || p.active === false
+        );
+
+        const activeGrouped = groupPlantsByRoom(active);
+
+        activeGrouped.forEach(([room, ps]) => {
+          if (room === REMOVED_ROOM) return;
+          if (!ps.length) return;
+
+          const roomCard = document.createElement("div");
+          roomCard.className = "comment-item";
+          roomCard.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
+
+          ps.forEach((p) => {
+            const line = document.createElement("div");
+            line.style.marginTop = "10px";
+            line.innerHTML =
+              `🪴 <b>${escapeHtml(p.name)}</b>` +
+              `<div class="status-pills">${statusPillsFor(p.name)}</div>`;
+            roomCard.appendChild(line);
+          });
+
+          body.appendChild(roomCard);
+        });
+
+        const removedRelevant = removed
+          .filter((p) => relevantNames.has(p.name))
+          .sort((a, b) => a.name.localeCompare(b.name, "de"));
+
+        if (removedRelevant.length) {
+          const roomCard = document.createElement("div");
+          roomCard.className = "comment-item";
+          roomCard.innerHTML = `<b>🏚️ ${escapeHtml(
+            REMOVED_ROOM
+          )}</b><div class="muted" style="margin-top:6px;">Diese Pflanzen wurden entfernt, werden aber für die Historie angezeigt.</div>`;
+
+          removedRelevant.forEach((p) => {
+            const line = document.createElement("div");
+            line.style.marginTop = "10px";
+            line.innerHTML =
+              `🪴 <b>${escapeHtml(p.name)}</b>` +
+              `<div class="status-pills">${statusPillsFor(p.name)}</div>`;
+            roomCard.appendChild(line);
+          });
+
+          body.appendChild(roomCard);
+        }
+
+        const comments = agg.comments || [];
+        const commentsCard = document.createElement("div");
+        commentsCard.className = "comment-item";
+        commentsCard.innerHTML = "<b>📝 Kommentare</b>";
+
+        if (!comments.length) {
+          const p = document.createElement("div");
+          p.className = "muted";
+          p.style.marginTop = "8px";
+          p.textContent = "Keine Kommentare an diesem Tag.";
+          commentsCard.appendChild(p);
+        } else {
+          comments.forEach((c) => {
+            const item = document.createElement("div");
+            item.style.marginTop = "10px";
+            item.innerHTML =
+              `🪴 <b>${escapeHtml(c.plant)}</b>${
+                c.pinned ? " <span class='pill'>📌</span>" : ""
+              }` +
+              `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
+                c.text
+              )}</div>`;
+            commentsCard.appendChild(item);
+          });
+        }
+
+        body.appendChild(commentsCard);
+      }
+
+      // ----- Calendar render -----
+      function renderCalendar(entries) {
+        const cal = document.getElementById("calendar");
+        const title = document.getElementById("monthTitle");
+        cal.innerHTML = "";
+
+        const base = new Date(
+          state.viewMonth.getFullYear(),
+          state.viewMonth.getMonth(),
+          1
+        );
+        title.textContent = base.toLocaleString("de-DE", {
+          month: "long",
+          year: "numeric",
+        });
+
+        const start = new Date(base);
+        const weekday = (start.getDay() + 6) % 7;
+        start.setDate(start.getDate() - weekday);
+
+        const counts = buildCounts(entries);
+        const todayISO = isoDate(new Date());
+
+        const labels = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+        for (const l of labels) {
+          const head = document.createElement("div");
+          head.className = "cal-head";
+          head.textContent = l;
+          cal.appendChild(head);
+        }
+
+        const total = getActivePlants().length;
+
+        for (let i = 0; i < 42; i++) {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          const iso = isoDate(d);
+
+          const cell = document.createElement("button");
+          cell.className = "day-btn";
+
+          if (d.getMonth() !== base.getMonth()) cell.style.opacity = "0.35";
+          if (iso === todayISO) cell.classList.add("today");
+          if (iso === state.selectedISO) cell.classList.add("selected");
+
+          const c = counts.get(iso);
+
+          const badges = [];
+          badges.push({ cls: "b-total", text: `🌿${total}` });
+
+          if (c?.hasAny) {
+            if (c?.waterDone?.size)
+              badges.push({ cls: "b-water", text: `💧${c.waterDone.size}` });
+            if (c?.fertDone?.size)
+              badges.push({ cls: "b-fert", text: `🧪${c.fertDone.size}` });
+            if (c?.commentsCount)
+              badges.push({
+                cls: "b-comment comment-badge big-comment",
+                text: `📝${c.commentsCount}`,
+                isComment: true,
+              });
+          }
+
+          const isToday = iso === todayISO;
+          cell.innerHTML = `
+            <div style="font-weight:900; font-size:16px;">
+              ${d.getDate()}
+              ${isToday ? `<span class="today-chip">✨ Heute</span>` : ``}
+            </div>
+            <div class="badges">
+              ${badges
+                .map((b) => {
+                  if (b.isComment) {
+                    return `<span class="badge ${b.cls}" onclick="openDayCommentsFromBadge(event,'${iso}')">${b.text}</span>`;
+                  }
+                  return `<span class="badge ${b.cls}">${b.text}</span>`;
+                })
+                .join("")}
+            </div>
+          `;
+
+          cell.onclick = () => openDayView(iso);
+          cal.appendChild(cell);
+        }
+      }
+
+      // ----- 📝 Comments popup per day -----
+      function openDayComments(iso) {
+        popupISO = iso;
+
+        const title = document.getElementById("dayCommentsTitle");
+        title.textContent = `📝 Kommentare – ${iso
+          .split("-")
+          .reverse()
+          .join(".")}`;
+
+        fillCommentPlants("popupCommentPlant", true);
+        document.getElementById("popupCommentText").value = "";
+        document.getElementById("popupCommentPinned").checked = false;
+
+        renderDayCommentsPopup();
+
+        const dlg = document.getElementById("dayCommentsDialog");
+        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+      }
+
+      function closeDayComments() {
+        popupISO = null;
+        const dlg = document.getElementById("dayCommentsDialog");
+        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+      }
+
+      function renderDayCommentsPopup() {
+        const wrap = document.getElementById("dayCommentsList");
+        wrap.innerHTML = "";
+
+        if (!popupISO) return;
+
+        const entries = loadEntries();
+        const agg = aggregateDay(entries, popupISO);
+
+        if (!agg.comments.length) {
+          const p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = "Noch keine Kommentare an diesem Tag.";
+          wrap.appendChild(p);
+          return;
+        }
+
+        agg.comments.forEach((c) => {
+          const box = document.createElement("div");
+          box.className = "comment-item" + (c.pinned ? " pinned" : "");
+
+          const header = document.createElement("div");
+          header.className = "comment-header";
+
+          const left = document.createElement("div");
+          left.innerHTML = `🪴 <b>${escapeHtml(c.plant)}</b> ${
+            c.pinned ? " <span class='pill'>📌</span>" : ""
+          }`;
+
+          const actions = document.createElement("div");
+          actions.className = "comment-actions";
+
+          const pinBtn = document.createElement("button");
+          pinBtn.className = "btn-ghost";
+          pinBtn.textContent = c.pinned ? "📌✓" : "📌";
+          pinBtn.onclick = () => togglePinComment(c.id);
+
+          const editBtn = document.createElement("button");
+          editBtn.className = "btn-ghost";
+          editBtn.textContent = "✏️";
+          editBtn.onclick = () => editComment(c.id);
+
+          const delBtn = document.createElement("button");
+          delBtn.className = "btn-danger";
+          delBtn.textContent = "🗑️";
+          delBtn.onclick = () => deleteComment(c.id);
+
+          actions.appendChild(pinBtn);
+          actions.appendChild(editBtn);
+          actions.appendChild(delBtn);
+
+          header.appendChild(left);
+          header.appendChild(actions);
+
+          const text = document.createElement("div");
+          text.className = "comment-text";
+          text.textContent = c.text;
+
+          box.appendChild(header);
+          box.appendChild(text);
+          wrap.appendChild(box);
+        });
+      }
+
+      function savePopupComment() {
+        if (!popupISO) return;
+
+        const plant = (
+          document.getElementById("popupCommentPlant").value || ""
+        ).trim();
+        const text = (
+          document.getElementById("popupCommentText").value || ""
+        ).trim();
+        const pinned = !!document.getElementById("popupCommentPinned").checked;
+
+        if (!plant) {
+          document.getElementById("output").textContent =
+            "Bitte eine Pflanze auswählen 🙂";
+          return;
+        }
+        if (!text) {
+          document.getElementById("output").textContent =
+            "Bitte einen Kommentar eingeben 🙂";
+          return;
+        }
+
+        saveCommentForISO(popupISO, plant, text, pinned);
+
+        document.getElementById("popupCommentText").value = "";
+        document.getElementById("popupCommentPinned").checked = false;
+
+        document.getElementById("output").textContent =
+          "📝 Kommentar gespeichert ✅";
+        renderAll();
+        renderDayCommentsPopup();
+        renderDayViewPopup();
+      }
+
+      // ----- Misc -----
+      function clearAll() {
+        if (!confirm("Wirklich alle Einträge löschen?")) return;
+        localStorage.removeItem(STORAGE_KEY);
+        document.getElementById("output").textContent =
+          "Alle Einträge gelöscht.";
+        renderAll();
+      }
+      function prevMonth() {
+        state.viewMonth = new Date(
+          state.viewMonth.getFullYear(),
+          state.viewMonth.getMonth() - 1,
+          1
+        );
+        renderAll();
+      }
+      function nextMonth() {
+        state.viewMonth = new Date(
+          state.viewMonth.getFullYear(),
+          state.viewMonth.getMonth() + 1,
+          1
+        );
+        renderAll();
+      }
+
+      function renderAll() {
+        renderPlants();
+        const entries = loadEntries();
+        renderHistory(entries);
+        renderCalendar(entries);
+        if (popupISO) renderDayCommentsPopup();
+        try {
+          fillCommentPlants("dayPopupCommentPlant", true);
+        } catch {}
+      }
+
+      // Expose
+      window.openHistory = openHistory;
+      window.closeHistory = closeHistory;
+      window.openPlants = openPlants;
+      window.closePlants = closePlants;
+
+      window.addPlant = addPlant;
+      window.renamePlant = renamePlant;
+      window.removePlant = removePlant;
+
+      window.openRoomDialog = openRoomDialog;
+      window.closeRoomDialog = closeRoomDialog;
+      window.saveRoomDialog = saveRoomDialog;
+
+      window.deletePlantCancel = deletePlantCancel;
+      window.deletePlantDeleteHistory = deletePlantDeleteHistory;
+      window.deletePlantKeepHistory = deletePlantKeepHistory;
+
+      window.prevMonth = prevMonth;
+      window.nextMonth = nextMonth;
+      window.clearAll = clearAll;
+
+      window.openAction = openAction;
+      window.openActionWithDate = openActionWithDate;
+      window.openActionForSelectedDay = openActionForSelectedDay;
+
+      window.setActionDateToday = setActionDateToday;
+      window.selectAllPlants = selectAllPlants;
+      window.selectNonePlants = selectNonePlants;
+      window.cancelAction = cancelAction;
+      window.confirmAction = confirmAction;
+
+      window.openCommentToday = openCommentToday;
+      window.closeComment = closeComment;
+      window.saveCommentToday = saveCommentToday;
+
+      window.saveDayCommentFromPopup = saveDayCommentFromPopup;
+
+      window.openDayCommentsFromBadge = openDayCommentsFromBadge;
+      window.openDayComments = openDayComments;
+      window.closeDayComments = closeDayComments;
+      window.savePopupComment = savePopupComment;
+
+      window.openDayView = openDayView;
+      window.closeDayView = closeDayView;
+
+      window.editComment = editComment;
+      window.deleteComment = deleteComment;
+      window.togglePinComment = togglePinComment;
+
+      renderAll();
+    </script>
+  </body>
+</html>
