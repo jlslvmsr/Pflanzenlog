@@ -2,7 +2,10 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>Pflanzenlog</title>
 
     <style>
@@ -46,7 +49,11 @@
       }
       body {
         font-family: var(--font);
-        margin: 16px;
+        margin: 0;
+        padding: calc(16px + env(safe-area-inset-top))
+          calc(16px + env(safe-area-inset-right))
+          calc(16px + env(safe-area-inset-bottom))
+          calc(16px + env(safe-area-inset-left));
         color: var(--text);
         background: radial-gradient(
             900px 600px at 15% 10%,
@@ -206,6 +213,11 @@
         grid-template-columns: repeat(7, 1fr);
         gap: 12px;
         margin-top: 12px;
+        width: 100%;
+        max-width: 100%;
+      }
+      .card {
+        overflow: hidden;
       }
       .cal-head {
         font-weight: 800;
@@ -497,6 +509,9 @@
         <button class="btn-note" onclick="openCommentToday()">
           📝 Kommentar (heute)
         </button>
+        <button class="btn-ghost" onclick="openPlantOverview()">
+          🪴 Pflanzenübersicht
+        </button>
       </div>
       <p id="output"></p>
     </div>
@@ -656,18 +671,20 @@
       <h2 id="actionTitle"></h2>
       <p class="muted" id="actionHint"></p>
 
-      <div class="comment-item" style="margin-top: 10px">
-        <div class="mini-label">📅 Datum (auch nachträglich möglich)</div>
+      <div class="comment-item" id="actionDateBlock" style="margin-top: 10px">
+        <div class="mini-label">📅 Datum</div>
         <div class="row" style="margin-top: 8px">
           <input id="actionDate" type="date" style="flex: 1" />
-          <button class="btn-ghost" onclick="setActionDateToday()">
+          <button
+            id="actionDateTodayBtn"
+            class="btn-ghost"
+            onclick="setActionDateToday()"
+          >
             Heute
           </button>
         </div>
-        <div class="muted" style="margin-top: 6px">
-          Tipp: Wenn du im Urlaub bist, trägst du hier einfach den Tag ein, an
-          dem gegossen/gedüngt wurde.
-        </div>
+
+        <div class="muted" style="margin-top: 6px"></div>
       </div>
 
       <div class="row" style="margin-top: 10px">
@@ -743,25 +760,67 @@
       </div>
     </dialog>
 
+    <!-- 🪴 Pflanzenübersicht -->
+    <dialog id="plantOverviewDialog">
+      <h2>🪴 Pflanzenübersicht</h2>
+      <div id="plantOverviewList"></div>
+
+      <div class="row" style="margin-top: 12px">
+        <button class="btn-ghost" onclick="closePlantOverview()">
+          Schließen
+        </button>
+      </div>
+    </dialog>
+
+    <!-- 📝 Pflanzenkommentar (tagesunabhängig) -->
+    <dialog id="plantNoteDialog">
+      <h2 id="plantNoteTitle">📝 Pflanzenkommentar</h2>
+
+      <textarea
+        id="plantNoteText"
+        placeholder="Kommentar zur Pflanze (tagesunabhängig)…"
+      ></textarea>
+
+      <div class="row" style="margin-top: 12px">
+        <button class="btn-danger" onclick="clearPlantNote()">
+          🗑️ Löschen
+        </button>
+        <button class="btn-ghost" onclick="closePlantNote()">Abbrechen</button>
+        <button class="btn-note" onclick="savePlantNote()">Speichern</button>
+      </div>
+    </dialog>
+
     <script>
+      // ==========================
+      // STORAGE KEYS / SETTINGS
+      // ==========================
       const STORAGE_KEY = "pflanzenlog_entries_v12";
       const PLANTS_KEY = "pflanzenlog_plants_v3_rooms_active";
+      const PLANT_NOTES_KEY = "pflanzenlog_plant_notes_v1"; // { "Monstera": "Text..." }
 
       const ROOMS_BASE = ["Wohnzimmer", "Schlafzimmer", "Flur", "Büro"];
       const REMOVED_ROOM = "Entfernte Pflanzen";
       const ROOMS_ALL = [...ROOMS_BASE, REMOVED_ROOM];
 
-      const state = { viewMonth: new Date(), selectedISO: isoDate(new Date()) };
+      const state = {
+        viewMonth: new Date(),
+        selectedISO: isoDate(new Date()),
+      };
 
       let pendingPlantToDelete = null;
+      let pendingRoomPlant = null;
+      let pendingPlantForNote = null;
+
       let pendingAction = null;
       let popupISO = null;
 
-      let pendingRoomPlant = null;
-
-      // ✅ Action dialog date (for backdating)
+      // Action date (for backdating)
       let actionISO = isoDate(new Date());
+      let actionDateLocked = false;
 
+      // ==========================
+      // HELPERS
+      // ==========================
       function isoDate(d) {
         const x = new Date(d);
         const y = x.getFullYear();
@@ -769,6 +828,12 @@
         const day = String(x.getDate()).padStart(2, "0");
         return `${y}-${m}-${day}`;
       }
+
+      function isoToNoonTs(iso) {
+        const [y, m, d] = iso.split("-").map(Number);
+        return new Date(y, m - 1, d, 12, 0, 0).getTime();
+      }
+
       const uniq = (arr) => Array.from(new Set((arr || []).filter(Boolean)));
       const setUnion = (a, b) => uniq([...(a || []), ...(b || [])]);
 
@@ -780,17 +845,36 @@
           .replaceAll('"', "&quot;")
           .replaceAll("'", "&#039;");
       }
+
       function uuid() {
         const now = Date.now();
         return crypto?.randomUUID
           ? crypto.randomUUID()
           : String(now) + "_" + Math.random().toString(16).slice(2);
       }
-      function isoToNoonTs(iso) {
-        const [y, m, d] = iso.split("-").map(Number);
-        return new Date(y, m - 1, d, 12, 0, 0).getTime();
+
+      function openDialog(id) {
+        const dlg = document.getElementById(id);
+        if (!dlg) return;
+        if (dlg.showModal) dlg.showModal();
+        else dlg.setAttribute("open", "");
       }
 
+      function closeDialog(id) {
+        const dlg = document.getElementById(id);
+        if (!dlg) return;
+        if (dlg.close) dlg.close();
+        else dlg.removeAttribute("open");
+      }
+
+      function out(msg) {
+        const el = document.getElementById("output");
+        if (el) el.textContent = msg || "";
+      }
+
+      // ==========================
+      // STORAGE LOAD/SAVE
+      // ==========================
       function loadEntries() {
         try {
           return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
@@ -798,8 +882,9 @@
           return [];
         }
       }
+
       function saveEntries(entries) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(entries || []));
       }
 
       function normalizePlant(p) {
@@ -812,6 +897,7 @@
       }
 
       function migrateOldPlantsIfNeeded() {
+        // v2 -> v3
         try {
           const v2 = JSON.parse(
             localStorage.getItem("pflanzenlog_plants_v2_rooms")
@@ -825,6 +911,7 @@
           }
         } catch {}
 
+        // v1 -> v3
         try {
           const v1 = JSON.parse(localStorage.getItem("pflanzenlog_plants_v1"));
           if (Array.isArray(v1) && v1.length) {
@@ -850,6 +937,7 @@
           }
         } catch {}
 
+        // Defaults (damit nicht "alles leer" ist)
         const defaults = [
           { name: "Monstera", room: "Wohnzimmer", active: true },
           { name: "Orchidee", room: "Schlafzimmer", active: true },
@@ -866,17 +954,46 @@
       function loadPlants() {
         try {
           const v3 = JSON.parse(localStorage.getItem(PLANTS_KEY));
-          if (Array.isArray(v3) && v3.length) {
+          if (Array.isArray(v3) && v3.length)
             return v3.map(normalizePlant).filter(Boolean);
-          }
         } catch {}
         return migrateOldPlantsIfNeeded();
       }
+
       function savePlants(plants) {
         localStorage.setItem(
           PLANTS_KEY,
-          JSON.stringify(plants.map(normalizePlant).filter(Boolean))
+          JSON.stringify((plants || []).map(normalizePlant).filter(Boolean))
         );
+      }
+
+      function loadPlantNotes() {
+        try {
+          return JSON.parse(localStorage.getItem(PLANT_NOTES_KEY)) || {};
+        } catch {
+          return {};
+        }
+      }
+
+      function savePlantNotes(map) {
+        localStorage.setItem(PLANT_NOTES_KEY, JSON.stringify(map || {}));
+      }
+
+      function getPlantNote(name) {
+        const notes = loadPlantNotes();
+        return String(notes?.[name] || "").trim();
+      }
+
+      function setPlantNote(name, text) {
+        const notes = loadPlantNotes();
+        const cleaned = String(text || "").trim();
+        if (!cleaned) delete notes[name];
+        else notes[name] = cleaned;
+        savePlantNotes(notes);
+      }
+
+      function getAllPlants() {
+        return loadPlants();
       }
 
       function getActivePlants() {
@@ -884,9 +1001,7 @@
           (p) => p.active !== false && p.room !== REMOVED_ROOM
         );
       }
-      function getAllPlants() {
-        return loadPlants();
-      }
+
       function activePlantNames() {
         return getActivePlants().map((p) => p.name);
       }
@@ -904,10 +1019,80 @@
         ]);
       }
 
-      // ----- Plants UI -----
+      // ==========================
+      // AGGREGATION
+      // ==========================
+      function aggregateDay(entries, iso) {
+        const res = {
+          water: { snapshot: [], done: [] },
+          fertilize: { snapshot: [], done: [] },
+          comments: [],
+        };
+
+        const dayEntries = (entries || []).filter(
+          (e) => e && isoDate(e.ts) === iso
+        );
+
+        dayEntries.forEach((e) => {
+          if (e.type === "batch") {
+            if (e.action === "water") {
+              res.water.snapshot = setUnion(res.water.snapshot, e.snapshot);
+              res.water.done = setUnion(res.water.done, e.done);
+            }
+            if (e.action === "fertilize") {
+              res.fertilize.snapshot = setUnion(
+                res.fertilize.snapshot,
+                e.snapshot
+              );
+              res.fertilize.done = setUnion(res.fertilize.done, e.done);
+            }
+          } else if (e.type === "comment") {
+            res.comments.push({
+              id: e.id,
+              plant: e.plant || "Unbekannt",
+              text: e.text || "",
+              ts: e.ts,
+              pinned: !!e.pinned,
+            });
+          }
+        });
+
+        res.water.snapshot = uniq(res.water.snapshot);
+        res.water.done = uniq(res.water.done);
+        res.fertilize.snapshot = uniq(res.fertilize.snapshot);
+        res.fertilize.done = uniq(res.fertilize.done);
+
+        res.comments.sort((a, b) => b.pinned - a.pinned || b.ts - a.ts);
+        return res;
+      }
+
+      function buildCounts(entries) {
+        const map = new Map();
+        const days = uniq((entries || []).map((e) => isoDate(e.ts)));
+
+        days.forEach((iso) => {
+          const agg = aggregateDay(entries, iso);
+          map.set(iso, {
+            hasAny:
+              (agg.water.done?.length || 0) > 0 ||
+              (agg.fertilize.done?.length || 0) > 0 ||
+              (agg.comments?.length || 0) > 0,
+            waterDone: new Set(agg.water.done || []),
+            fertDone: new Set(agg.fertilize.done || []),
+            commentsCount: agg.comments.length || 0,
+          });
+        });
+
+        return map;
+      }
+
+      // ==========================
+      // PLANTS DIALOG (MANAGE)
+      // ==========================
       function renderPlants() {
         const plants = getAllPlants();
         const list = document.getElementById("plantsList");
+        if (!list) return;
         list.innerHTML = "";
 
         const grouped = groupPlantsByRoom(plants);
@@ -942,21 +1127,27 @@
             const actions = document.createElement("div");
             actions.className = "plant-actions";
 
-            const roomBtn = document.createElement("button");
-            roomBtn.className = "btn-ghost";
-            roomBtn.textContent = "🏠 Raum";
-            roomBtn.onclick = () => openRoomDialog(pObj.name);
-
             const renameBtn = document.createElement("button");
             renameBtn.className = "btn-ghost";
-            renameBtn.textContent = "✏️ Name";
+            renameBtn.textContent = "✏️";
             renameBtn.onclick = () => renamePlant(pObj.name);
+
+            const roomBtn = document.createElement("button");
+            roomBtn.className = "btn-ghost";
+            roomBtn.textContent = "🏠";
+            roomBtn.onclick = () => openRoomDialog(pObj.name);
+
+            const noteBtn = document.createElement("button");
+            noteBtn.className = "btn-ghost";
+            noteBtn.textContent = "📝";
+            noteBtn.onclick = () => openPlantNote(pObj.name);
 
             const delBtn = document.createElement("button");
             delBtn.className = "btn-danger";
             delBtn.textContent = "🗑️";
             delBtn.onclick = () => removePlant(pObj.name);
 
+            actions.appendChild(noteBtn);
             actions.appendChild(roomBtn);
             actions.appendChild(renameBtn);
             actions.appendChild(delBtn);
@@ -968,18 +1159,26 @@
         });
       }
 
+      function openPlants() {
+        renderPlants();
+        openDialog("plantsDialog");
+      }
+
+      function closePlants() {
+        closeDialog("plantsDialog");
+      }
+
       function addPlant() {
         const inp = document.getElementById("newPlant");
         const roomSel = document.getElementById("newRoom");
 
-        const name = (inp.value || "").trim();
+        const name = (inp?.value || "").trim();
         const room = (roomSel?.value || "Wohnzimmer").trim();
         if (!name) return;
 
         const plants = getAllPlants();
         if (plants.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
-          document.getElementById("output").textContent =
-            "Diese Pflanze gibt’s schon 🙂";
+          out("Diese Pflanze gibt’s schon 🙂");
           return;
         }
 
@@ -990,12 +1189,10 @@
         });
         savePlants(plants);
 
-        inp.value = "";
-        roomSel.value = "Wohnzimmer";
+        if (inp) inp.value = "";
+        if (roomSel) roomSel.value = "Wohnzimmer";
 
-        document.getElementById(
-          "output"
-        ).textContent = `✅ Pflanze hinzugefügt: ${name} (${room})`;
+        out(`✅ Pflanze hinzugefügt: ${name} (${room})`);
         renderAll();
       }
 
@@ -1013,8 +1210,7 @@
               p.name !== oldName
           )
         ) {
-          document.getElementById("output").textContent =
-            "Name existiert schon 🙂";
+          out("Name existiert schon 🙂");
           return;
         }
 
@@ -1022,14 +1218,21 @@
           plants.map((p) => (p.name === oldName ? { ...p, name: cleaned } : p))
         );
 
+        // Entries mit umbenennen
         const entries = loadEntries().map((e) =>
           renamePlantInEntry(e, oldName, cleaned)
         );
         saveEntries(entries);
 
-        document.getElementById(
-          "output"
-        ).textContent = `✅ Umbenannt: ${oldName} → ${cleaned}`;
+        // Plant notes umbenennen
+        const notes = loadPlantNotes();
+        if (notes[oldName]) {
+          notes[cleaned] = notes[oldName];
+          delete notes[oldName];
+          savePlantNotes(notes);
+        }
+
+        out(`✅ Umbenannt: ${oldName} → ${cleaned}`);
         renderAll();
       }
 
@@ -1050,16 +1253,20 @@
         return e;
       }
 
-      // Room dialog
+      // ==========================
+      // ROOM DIALOG
+      // ==========================
       function openRoomDialog(name) {
         pendingRoomPlant = name;
         const plants = getAllPlants();
         const current = plants.find((p) => p.name === name);
-        document.getElementById(
-          "roomPlantLabel"
-        ).textContent = `Pflanze: ${name}`;
+
+        const label = document.getElementById("roomPlantLabel");
+        if (label) label.textContent = `Pflanze: ${name}`;
 
         const sel = document.getElementById("roomSelect");
+        if (!sel) return;
+
         sel.innerHTML = "";
         ROOMS_ALL.forEach((r) => {
           const opt = document.createElement("option");
@@ -1067,21 +1274,22 @@
           opt.textContent = r;
           sel.appendChild(opt);
         });
+
         sel.value = ROOMS_ALL.includes(current?.room)
           ? current.room
           : "Wohnzimmer";
 
-        const dlg = document.getElementById("roomDialog");
-        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+        openDialog("roomDialog");
       }
+
       function closeRoomDialog() {
         pendingRoomPlant = null;
-        const dlg = document.getElementById("roomDialog");
-        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+        closeDialog("roomDialog");
       }
+
       function saveRoomDialog() {
         if (!pendingRoomPlant) return;
-        const room = document.getElementById("roomSelect").value;
+        const room = document.getElementById("roomSelect")?.value;
 
         const plants = getAllPlants();
         savePlants(
@@ -1093,13 +1301,14 @@
           })
         );
 
-        document.getElementById(
-          "output"
-        ).textContent = `🏠 Raum gesetzt: ${pendingRoomPlant} → ${room}`;
+        out(`🏠 Raum gesetzt: ${pendingRoomPlant} → ${room}`);
         closeRoomDialog();
         renderAll();
       }
 
+      // ==========================
+      // DELETE PLANT DIALOG
+      // ==========================
       function removePlant(name) {
         const plants = getAllPlants();
         const activeCount = getActivePlants().length;
@@ -1107,31 +1316,28 @@
         const isActive =
           target && target.active !== false && target.room !== REMOVED_ROOM;
         if (isActive && activeCount <= 1) {
-          document.getElementById("output").textContent =
-            "Mindestens 1 aktive Pflanze behalten 🙂";
+          out("Mindestens 1 aktive Pflanze behalten 🙂");
           return;
         }
         pendingPlantToDelete = name;
         openDeletePlantDialog(name);
       }
 
-      // ----- Delete Plant Dialog -----
       function openDeletePlantDialog(plantName) {
-        document.getElementById(
-          "deletePlantText"
-        ).textContent = `Was soll mit der Historie von „${plantName}“ passieren?`;
-        const dlg = document.getElementById("deletePlantDialog");
-        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+        const t = document.getElementById("deletePlantText");
+        if (t)
+          t.textContent = `Was soll mit der Historie von „${plantName}“ passieren?`;
+        openDialog("deletePlantDialog");
       }
+
       function closeDeletePlantDialog() {
-        const dlg = document.getElementById("deletePlantDialog");
-        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+        closeDialog("deletePlantDialog");
       }
+
       function deletePlantCancel() {
         pendingPlantToDelete = null;
         closeDeletePlantDialog();
-        document.getElementById("output").textContent =
-          "Abgebrochen – nichts geändert.";
+        out("Abgebrochen – nichts geändert.");
       }
 
       function deletePlantKeepHistory() {
@@ -1140,37 +1346,16 @@
 
         const plants = getAllPlants();
         savePlants(
-          plants.map((p) => {
-            if (p.name !== name) return p;
-            return { ...p, room: REMOVED_ROOM, active: false };
-          })
+          plants.map((p) =>
+            p.name !== name ? p : { ...p, room: REMOVED_ROOM, active: false }
+          )
         );
 
         pendingPlantToDelete = null;
         closeDeletePlantDialog();
-        document.getElementById(
-          "output"
-        ).textContent = `✅ „${name}“ wurde zu „${REMOVED_ROOM}“ verschoben (Historie bleibt).`;
-        renderAll();
-      }
-
-      function deletePlantDeleteHistory() {
-        if (!pendingPlantToDelete) return;
-        const name = pendingPlantToDelete;
-
-        savePlants(getAllPlants().filter((p) => p.name !== name));
-
-        const entries = loadEntries();
-        const cleaned = entries
-          .map((e) => removePlantFromEntry(e, name))
-          .filter((e) => e !== null);
-        saveEntries(cleaned);
-
-        pendingPlantToDelete = null;
-        closeDeletePlantDialog();
-        document.getElementById(
-          "output"
-        ).textContent = `🗑️ Pflanze + Historie gelöscht: ${name}`;
+        out(
+          `✅ „${name}“ wurde zu „${REMOVED_ROOM}“ verschoben (Historie bleibt).`
+        );
         renderAll();
       }
 
@@ -1189,56 +1374,114 @@
         return e;
       }
 
-      // ----- Aggregation per day -----
-      function aggregateDay(entries, iso) {
-        const res = {
-          water: { snapshot: [], done: [] },
-          fertilize: { snapshot: [], done: [] },
-          comments: [],
-        };
+      function deletePlantDeleteHistory() {
+        if (!pendingPlantToDelete) return;
+        const name = pendingPlantToDelete;
 
-        const dayEntries = entries.filter((e) => isoDate(e.ts) === iso);
+        savePlants(getAllPlants().filter((p) => p.name !== name));
 
-        dayEntries.forEach((e) => {
-          if (e.type === "batch") {
-            if (e.action === "water") {
-              res.water.snapshot = setUnion(res.water.snapshot, e.snapshot);
-              res.water.done = setUnion(res.water.done, e.done);
-            }
-            if (e.action === "fertilize") {
-              res.fertilize.snapshot = setUnion(
-                res.fertilize.snapshot,
-                e.snapshot
-              );
-              res.fertilize.done = setUnion(res.fertilize.done, e.done);
-            }
-          } else if (e.type === "comment") {
-            res.comments.push({
-              id: e.id,
-              plant: e.plant || "Unbekannt",
-              text: e.text || "",
-              ts: e.ts,
-              pinned: !!e.pinned,
-            });
-          }
-        });
+        const entries = loadEntries();
+        const cleaned = entries
+          .map((e) => removePlantFromEntry(e, name))
+          .filter((e) => e !== null);
+        saveEntries(cleaned);
 
-        res.water.snapshot = uniq(res.water.snapshot);
-        res.water.done = uniq(res.water.done);
+        setPlantNote(name, "");
 
-        res.fertilize.snapshot = uniq(res.fertilize.snapshot);
-        res.fertilize.done = uniq(res.fertilize.done);
-
-        res.comments.sort((a, b) => b.pinned - a.pinned || b.ts - a.ts);
-        return res;
+        pendingPlantToDelete = null;
+        closeDeletePlantDialog();
+        out(`🗑️ Pflanze + Historie gelöscht: ${name}`);
+        renderAll();
       }
 
-      // ----- History -----
+      // ==========================
+      // PLANT NOTE (per plant)
+      // ==========================
+      function openPlantNote(name) {
+        pendingPlantForNote = name;
+        const title = document.getElementById("plantNoteTitle");
+        const ta = document.getElementById("plantNoteText");
+        if (title) title.textContent = `📝 Pflanzenkommentar – ${name}`;
+        if (ta) ta.value = getPlantNote(name);
+        openDialog("plantNoteDialog");
+      }
+
+      function closePlantNote() {
+        pendingPlantForNote = null;
+        closeDialog("plantNoteDialog");
+      }
+
+      function savePlantNote() {
+        if (!pendingPlantForNote) return;
+        const text = document.getElementById("plantNoteText")?.value || "";
+        setPlantNote(pendingPlantForNote, text);
+        out("📝 Pflanzenkommentar gespeichert ✅");
+        closePlantNote();
+        renderAll();
+      }
+
+      function clearPlantNote() {
+        if (!pendingPlantForNote) return;
+        setPlantNote(pendingPlantForNote, "");
+        const ta = document.getElementById("plantNoteText");
+        if (ta) ta.value = "";
+        out("🗑️ Pflanzenkommentar gelöscht.");
+        renderAll();
+      }
+
+      // ==========================
+      // PLANT OVERVIEW
+      // ==========================
+      function openPlantOverview() {
+        renderPlantOverview();
+        openDialog("plantOverviewDialog");
+      }
+      function closePlantOverview() {
+        closeDialog("plantOverviewDialog");
+      }
+
+      function renderPlantOverview() {
+        const wrap = document.getElementById("plantOverviewList");
+        if (!wrap) return;
+        wrap.innerHTML = "";
+
+        const plants = getAllPlants();
+        const grouped = groupPlantsByRoom(plants);
+
+        grouped.forEach(([room, ps]) => {
+          if (!ps.length) return;
+
+          const card = document.createElement("div");
+          card.className = "comment-item";
+          card.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
+
+          ps.forEach((p) => {
+            const note = getPlantNote(p.name);
+            const line = document.createElement("div");
+            line.style.marginTop = "10px";
+            line.innerHTML =
+              `🪴 <b>${escapeHtml(p.name)}</b>` +
+              (note
+                ? `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
+                    note
+                  )}</div>`
+                : `<div class="muted" style="margin-top:6px;">(kein Pflanzenkommentar)</div>`);
+            card.appendChild(line);
+          });
+
+          wrap.appendChild(card);
+        });
+      }
+
+      // ==========================
+      // HISTORY DIALOG
+      // ==========================
       function renderHistory(entries) {
         const historyEl = document.getElementById("history");
+        if (!historyEl) return;
         historyEl.innerHTML = "";
 
-        if (!entries.length) {
+        if (!(entries || []).length) {
           const li = document.createElement("li");
           li.textContent = "Noch keine Einträge.";
           historyEl.appendChild(li);
@@ -1266,59 +1509,68 @@
       }
 
       function openHistory() {
-        const dlg = document.getElementById("historyDialog");
         renderAll();
-        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+        openDialog("historyDialog");
       }
+
       function closeHistory() {
-        const dlg = document.getElementById("historyDialog");
-        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+        closeDialog("historyDialog");
       }
 
-      function openPlants() {
-        const dlg = document.getElementById("plantsDialog");
-        renderPlants();
-        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
-      }
-      function closePlants() {
-        const dlg = document.getElementById("plantsDialog");
-        dlg.close ? dlg.close() : dlg.removeAttribute("open");
-      }
-
-      // ----- ✅ Action Dialog (Smart Default + Datum/Nachtragen) -----
+      // ==========================
+      // ACTION DIALOG (water/fertilize) + backdating
+      // ==========================
       function setActionDateToday() {
         const today = isoDate(new Date());
-        document.getElementById("actionDate").value = today;
+        const dateEl = document.getElementById("actionDate");
+        if (dateEl) dateEl.value = today;
         actionISO = today;
         refreshActionListForDate();
       }
 
-      // ✅ open action with a specific date (used by Day Popup buttons)
-      function openActionWithDate(action, iso) {
+      function openActionWithDate(action, iso, lockDate = false) {
         pendingAction = action;
 
-        document.getElementById("actionTitle").textContent =
-          action === "water"
-            ? "💧 Gießen – welche Pflanzen?"
-            : "🧪 Düngen – welche Pflanzen?";
+        const title = document.getElementById("actionTitle");
+        if (title) {
+          title.textContent =
+            action === "water"
+              ? "💧 Gießen – welche Pflanzen?"
+              : "🧪 Düngen – welche Pflanzen?";
+        }
 
         actionISO = iso || isoDate(new Date());
-        const dateEl = document.getElementById("actionDate");
-        dateEl.value = actionISO;
+        actionDateLocked = !!lockDate;
 
-        dateEl.onchange = () => {
-          actionISO = dateEl.value || isoDate(new Date());
-          refreshActionListForDate();
-        };
+        const dateEl = document.getElementById("actionDate");
+        if (dateEl) {
+          dateEl.value = actionISO;
+          dateEl.disabled = actionDateLocked;
+
+          dateEl.onchange = () => {
+            if (actionDateLocked) {
+              dateEl.value = actionISO;
+              return;
+            }
+            actionISO = dateEl.value || isoDate(new Date());
+            refreshActionListForDate();
+          };
+        }
+
+        const todayBtn = document.getElementById("actionDateTodayBtn");
+        if (todayBtn) todayBtn.style.display = actionDateLocked ? "none" : "";
 
         refreshActionListForDate();
-
-        const dlg = document.getElementById("actionDialog");
-        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+        openDialog("actionDialog");
       }
 
       function openAction(action) {
-        openActionWithDate(action, isoDate(new Date()));
+        // Top-bar actions: standardmäßig "heute" und Datum gesperrt
+        openActionWithDate(action, isoDate(new Date()), true);
+      }
+
+      function openActionForSelectedDay(action) {
+        openActionWithDate(action, state.selectedISO, true);
       }
 
       function refreshActionListForDate() {
@@ -1328,27 +1580,29 @@
           pendingAction === "water" ? agg.water.done : agg.fertilize.done;
 
         const hint = document.getElementById("actionHint");
-        hint.textContent = alreadyDone.length
-          ? `Smart-Default: an diesem Datum schon geloggt (${alreadyDone.length}) ist abgewählt.`
-          : "Smart-Default: alle Pflanzen sind ausgewählt.";
+        if (hint) {
+          hint.textContent = alreadyDone.length
+            ? `Smart-Default: an diesem Datum schon geloggt (${alreadyDone.length}) ist abgewählt.`
+            : "Smart-Default: alle Pflanzen sind ausgewählt.";
+        }
 
         const list = document.getElementById("actionList");
+        if (!list) return;
         list.innerHTML = "";
 
         const plants = getActivePlants();
         plants.forEach((pObj, idx) => {
-          const p = pObj.name;
           const row = document.createElement("label");
           row.className = "checkitem";
 
           const cb = document.createElement("input");
           cb.type = "checkbox";
-          cb.dataset.plant = p;
+          cb.dataset.plant = pObj.name;
           cb.id = "cb_" + idx;
-          cb.checked = !alreadyDone.includes(p);
+          cb.checked = !alreadyDone.includes(pObj.name);
 
           const text = document.createElement("span");
-          text.textContent = `${p} (${pObj.room || "Wohnzimmer"})`;
+          text.textContent = `${pObj.name} (${pObj.room || "Wohnzimmer"})`;
 
           row.appendChild(cb);
           row.appendChild(text);
@@ -1361,20 +1615,17 @@
           .querySelectorAll("#actionList input[type=checkbox]")
           .forEach((cb) => (cb.checked = true));
       }
+
       function selectNonePlants() {
         document
           .querySelectorAll("#actionList input[type=checkbox]")
           .forEach((cb) => (cb.checked = false));
       }
+
       function cancelAction() {
         pendingAction = null;
-        closeActionDialog();
-        document.getElementById("output").textContent =
-          "Abgebrochen – nichts gespeichert.";
-      }
-      function closeActionDialog() {
-        const dlg = document.getElementById("actionDialog");
-        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+        closeDialog("actionDialog");
+        out("Abgebrochen – nichts gespeichert.");
       }
 
       function confirmAction() {
@@ -1387,8 +1638,7 @@
           .map((cb) => cb.dataset.plant);
 
         if (selected.length === 0) {
-          document.getElementById("output").textContent =
-            "Keine Pflanzen ausgewählt 🙂";
+          out("Keine Pflanzen ausgewählt 🙂");
           return;
         }
 
@@ -1409,15 +1659,12 @@
 
         if (idx >= 0) {
           const existing = entries[idx];
-          const mergedSnapshot = setUnion(existing.snapshot, snapshot);
-          const mergedDone = setUnion(existing.done, selected);
-
           entries[idx] = {
             ...existing,
             ts,
             date: dateStr,
-            snapshot: mergedSnapshot,
-            done: mergedDone,
+            snapshot: setUnion(existing.snapshot, snapshot),
+            done: setUnion(existing.done, selected),
           };
         } else {
           entries.unshift({
@@ -1432,23 +1679,26 @@
 
         saveEntries(entries);
 
-        document.getElementById("output").textContent = `${
-          pendingAction === "water" ? "💧" : "🧪"
-        } gespeichert für ${iso.split("-").reverse().join(".")}: ${
-          selected.length
-        } Pflanze(n) ✅`;
+        out(
+          `${pendingAction === "water" ? "💧" : "🧪"} gespeichert für ${iso
+            .split("-")
+            .reverse()
+            .join(".")}: ${selected.length} Pflanze(n) ✅`
+        );
 
         state.selectedISO = iso;
-
         pendingAction = null;
-        closeActionDialog();
+        closeDialog("actionDialog");
         renderAll();
       }
 
-      // ----- Comments -----
+      // ==========================
+      // COMMENTS (today + per day popup)
+      // ==========================
       function fillCommentPlants(selectElId, includeRemoved = true) {
         const plants = includeRemoved ? getAllPlants() : getActivePlants();
         const sel = document.getElementById(selectElId);
+        if (!sel) return;
         sel.innerHTML = "";
         plants.forEach((p) => {
           const opt = document.createElement("option");
@@ -1460,19 +1710,6 @@
         });
       }
 
-      function openCommentToday() {
-        fillCommentPlants("commentPlant", true);
-        document.getElementById("commentText").value = "";
-        document.getElementById("commentPinned").checked = false;
-
-        const dlg = document.getElementById("commentDialog");
-        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
-      }
-      function closeComment() {
-        const dlg = document.getElementById("commentDialog");
-        dlg.close ? dlg.close() : dlg.removeAttribute("open");
-      }
-
       function saveCommentForISO(iso, plant, text, pinned) {
         const ts = isoToNoonTs(iso);
         const entry = {
@@ -1482,426 +1719,85 @@
           date: new Date(ts).toLocaleDateString("de-DE"),
           plant,
           text,
-          pinned,
+          pinned: !!pinned,
         };
         const entries = loadEntries();
         entries.unshift(entry);
         saveEntries(entries);
       }
 
+      function openCommentToday() {
+        fillCommentPlants("commentPlant", true);
+        const ta = document.getElementById("commentText");
+        const pin = document.getElementById("commentPinned");
+        if (ta) ta.value = "";
+        if (pin) pin.checked = false;
+        openDialog("commentDialog");
+      }
+
+      function closeComment() {
+        closeDialog("commentDialog");
+      }
+
       function saveCommentToday() {
         const plant = (
-          document.getElementById("commentPlant").value || ""
+          document.getElementById("commentPlant")?.value || ""
         ).trim();
         const text = (
-          document.getElementById("commentText").value || ""
+          document.getElementById("commentText")?.value || ""
         ).trim();
-        const pinned = !!document.getElementById("commentPinned").checked;
+        const pinned = !!document.getElementById("commentPinned")?.checked;
 
-        if (!plant) {
-          document.getElementById("output").textContent =
-            "Bitte eine Pflanze auswählen 🙂";
-          return;
-        }
-        if (!text) {
-          document.getElementById("output").textContent =
-            "Bitte einen Kommentar eingeben 🙂";
-          return;
-        }
+        if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
+        if (!text) return out("Bitte einen Kommentar eingeben 🙂");
 
         const iso = isoDate(new Date());
         saveCommentForISO(iso, plant, text, pinned);
 
         state.selectedISO = iso;
-        document.getElementById("output").textContent =
-          "📝 Kommentar gespeichert ✅";
+        out("📝 Kommentar gespeichert ✅");
         closeComment();
         renderAll();
       }
 
-      function saveDayCommentFromPopup() {
-        const plant = (
-          document.getElementById("dayPopupCommentPlant").value || ""
-        ).trim();
-        const text = (
-          document.getElementById("dayPopupCommentText").value || ""
-        ).trim();
-        const pinned = !!document.getElementById("dayPopupCommentPinned")
-          .checked;
-
-        if (!plant) {
-          document.getElementById("output").textContent =
-            "Bitte eine Pflanze auswählen 🙂";
-          return;
-        }
-        if (!text) {
-          document.getElementById("output").textContent =
-            "Bitte einen Kommentar eingeben 🙂";
-          return;
-        }
-
-        const iso = state.selectedISO;
-        saveCommentForISO(iso, plant, text, pinned);
-
-        document.getElementById("dayPopupCommentText").value = "";
-        document.getElementById("dayPopupCommentPinned").checked = false;
-
-        document.getElementById("output").textContent =
-          "📝 Kommentar zum Tag gespeichert ✅";
-        renderAll();
-        if (popupISO) renderDayCommentsPopup();
-        renderDayViewPopup();
-      }
-
-      function editComment(id) {
-        const entries = loadEntries();
-        const idx = entries.findIndex(
-          (e) => e && e.type === "comment" && e.id === id
-        );
-        if (idx < 0) return;
-
-        const current = entries[idx];
-        const newText = prompt(
-          `Kommentar für ${current.plant} bearbeiten:`,
-          current.text || ""
-        );
-        if (newText === null) return;
-
-        const cleaned = String(newText).trim();
-        if (!cleaned) {
-          alert("Kommentar darf nicht leer sein.");
-          return;
-        }
-
-        entries[idx] = { ...current, text: cleaned };
-        saveEntries(entries);
-
-        document.getElementById("output").textContent =
-          "📝 Kommentar aktualisiert ✅";
-        renderAll();
-        if (popupISO) renderDayCommentsPopup();
-        renderDayViewPopup();
-      }
-
-      function deleteComment(id) {
-        if (!confirm("Kommentar wirklich löschen?")) return;
-        const entries = loadEntries().filter(
-          (e) => !(e && e.type === "comment" && e.id === id)
-        );
-        saveEntries(entries);
-        document.getElementById("output").textContent =
-          "🗑️ Kommentar gelöscht.";
-        renderAll();
-        if (popupISO) renderDayCommentsPopup();
-        renderDayViewPopup();
-      }
-
-      function togglePinComment(id) {
-        const entries = loadEntries();
-        const idx = entries.findIndex(
-          (e) => e && e.type === "comment" && e.id === id
-        );
-        if (idx < 0) return;
-        entries[idx] = { ...entries[idx], pinned: !entries[idx].pinned };
-        saveEntries(entries);
-        renderAll();
-        if (popupISO) renderDayCommentsPopup();
-        renderDayViewPopup();
-      }
-
-      // ----- Calendar counts -----
-      function buildCounts(entries) {
-        const map = new Map();
-        const days = uniq(entries.map((e) => isoDate(e.ts)));
-
-        days.forEach((iso) => {
-          const agg = aggregateDay(entries, iso);
-          map.set(iso, {
-            hasAny:
-              (agg.water.done?.length || 0) > 0 ||
-              (agg.fertilize.done?.length || 0) > 0 ||
-              (agg.comments?.length || 0) > 0,
-            waterDone: new Set(agg.water.done || []),
-            fertDone: new Set(agg.fertilize.done || []),
-            commentsCount: agg.comments.length || 0,
-          });
-        });
-
-        return map;
-      }
-
+      // ==========================
+      // DAY COMMENTS POPUP (badge)
+      // ==========================
       function openDayCommentsFromBadge(evt, iso) {
         if (evt) evt.stopPropagation();
         openDayComments(iso);
       }
 
-      // ----- Day view popup -----
-      function openDayView(iso) {
-        state.selectedISO = iso;
-        const title = document.getElementById("dayViewTitle");
-        title.textContent = `📅 Tagesansicht – ${iso
-          .split("-")
-          .reverse()
-          .join(".")}`;
-
-        fillCommentPlants("dayPopupCommentPlant", true);
-
-        renderDayViewPopup();
-        const dlg = document.getElementById("dayViewDialog");
-        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
-      }
-      function closeDayView() {
-        const dlg = document.getElementById("dayViewDialog");
-        dlg.close ? dlg.close() : dlg.removeAttribute("open");
-      }
-
-      // ✅ Buttons in day popup
-      function openActionForSelectedDay(action) {
-        openActionWithDate(action, state.selectedISO);
-      }
-
-      function pillMini(text, cls) {
-        return `<span class="pill-mini ${cls}">${text}</span>`;
-      }
-
-      function renderDayViewPopup() {
-        const body = document.getElementById("dayViewBody");
-        body.innerHTML = "";
-
-        const entries = loadEntries();
-        const iso = state.selectedISO;
-        const agg = aggregateDay(entries, iso);
-
-        const waterDone = new Set(agg.water.done || []);
-        const fertDone = new Set(agg.fertilize.done || []);
-
-        const commentsByPlant = new Map();
-        (agg.comments || []).forEach((c) => {
-          const k = c.plant || "Unbekannt";
-          commentsByPlant.set(k, (commentsByPlant.get(k) || 0) + 1);
-        });
-
-        const relevantNames = new Set(
-          [
-            ...(agg.water.snapshot || []),
-            ...(agg.fertilize.snapshot || []),
-            ...(agg.water.done || []),
-            ...(agg.fertilize.done || []),
-            ...(agg.comments || []).map((c) => c.plant),
-          ].filter(Boolean)
-        );
-
-        function statusPillsFor(name) {
-          const pills = [];
-          if (waterDone.has(name)) pills.push(pillMini("💧", "water"));
-          if (fertDone.has(name)) pills.push(pillMini("🧪", "fert"));
-
-          const cc = commentsByPlant.get(name) || 0;
-          if (cc) pills.push(pillMini(`📝${cc}`, "note"));
-
-          if (!waterDone.has(name) && !fertDone.has(name))
-            pills.unshift(pillMini("—", "none"));
-          return pills.join("");
-        }
-
-        const all = getAllPlants();
-        const active = all.filter(
-          (p) => p.active !== false && p.room !== REMOVED_ROOM
-        );
-        const removed = all.filter(
-          (p) => p.room === REMOVED_ROOM || p.active === false
-        );
-
-        const activeGrouped = groupPlantsByRoom(active);
-
-        activeGrouped.forEach(([room, ps]) => {
-          if (room === REMOVED_ROOM) return;
-          if (!ps.length) return;
-
-          const roomCard = document.createElement("div");
-          roomCard.className = "comment-item";
-          roomCard.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
-
-          ps.forEach((p) => {
-            const line = document.createElement("div");
-            line.style.marginTop = "10px";
-            line.innerHTML =
-              `🪴 <b>${escapeHtml(p.name)}</b>` +
-              `<div class="status-pills">${statusPillsFor(p.name)}</div>`;
-            roomCard.appendChild(line);
-          });
-
-          body.appendChild(roomCard);
-        });
-
-        const removedRelevant = removed
-          .filter((p) => relevantNames.has(p.name))
-          .sort((a, b) => a.name.localeCompare(b.name, "de"));
-
-        if (removedRelevant.length) {
-          const roomCard = document.createElement("div");
-          roomCard.className = "comment-item";
-          roomCard.innerHTML = `<b>🏚️ ${escapeHtml(
-            REMOVED_ROOM
-          )}</b><div class="muted" style="margin-top:6px;">Diese Pflanzen wurden entfernt, werden aber für die Historie angezeigt.</div>`;
-
-          removedRelevant.forEach((p) => {
-            const line = document.createElement("div");
-            line.style.marginTop = "10px";
-            line.innerHTML =
-              `🪴 <b>${escapeHtml(p.name)}</b>` +
-              `<div class="status-pills">${statusPillsFor(p.name)}</div>`;
-            roomCard.appendChild(line);
-          });
-
-          body.appendChild(roomCard);
-        }
-
-        const comments = agg.comments || [];
-        const commentsCard = document.createElement("div");
-        commentsCard.className = "comment-item";
-        commentsCard.innerHTML = "<b>📝 Kommentare</b>";
-
-        if (!comments.length) {
-          const p = document.createElement("div");
-          p.className = "muted";
-          p.style.marginTop = "8px";
-          p.textContent = "Keine Kommentare an diesem Tag.";
-          commentsCard.appendChild(p);
-        } else {
-          comments.forEach((c) => {
-            const item = document.createElement("div");
-            item.style.marginTop = "10px";
-            item.innerHTML =
-              `🪴 <b>${escapeHtml(c.plant)}</b>${
-                c.pinned ? " <span class='pill'>📌</span>" : ""
-              }` +
-              `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
-                c.text
-              )}</div>`;
-            commentsCard.appendChild(item);
-          });
-        }
-
-        body.appendChild(commentsCard);
-      }
-
-      // ----- Calendar render -----
-      function renderCalendar(entries) {
-        const cal = document.getElementById("calendar");
-        const title = document.getElementById("monthTitle");
-        cal.innerHTML = "";
-
-        const base = new Date(
-          state.viewMonth.getFullYear(),
-          state.viewMonth.getMonth(),
-          1
-        );
-        title.textContent = base.toLocaleString("de-DE", {
-          month: "long",
-          year: "numeric",
-        });
-
-        const start = new Date(base);
-        const weekday = (start.getDay() + 6) % 7;
-        start.setDate(start.getDate() - weekday);
-
-        const counts = buildCounts(entries);
-        const todayISO = isoDate(new Date());
-
-        const labels = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-        for (const l of labels) {
-          const head = document.createElement("div");
-          head.className = "cal-head";
-          head.textContent = l;
-          cal.appendChild(head);
-        }
-
-        const total = getActivePlants().length;
-
-        for (let i = 0; i < 42; i++) {
-          const d = new Date(start);
-          d.setDate(start.getDate() + i);
-          const iso = isoDate(d);
-
-          const cell = document.createElement("button");
-          cell.className = "day-btn";
-
-          if (d.getMonth() !== base.getMonth()) cell.style.opacity = "0.35";
-          if (iso === todayISO) cell.classList.add("today");
-          if (iso === state.selectedISO) cell.classList.add("selected");
-
-          const c = counts.get(iso);
-
-          const badges = [];
-          badges.push({ cls: "b-total", text: `🌿${total}` });
-
-          if (c?.hasAny) {
-            if (c?.waterDone?.size)
-              badges.push({ cls: "b-water", text: `💧${c.waterDone.size}` });
-            if (c?.fertDone?.size)
-              badges.push({ cls: "b-fert", text: `🧪${c.fertDone.size}` });
-            if (c?.commentsCount)
-              badges.push({
-                cls: "b-comment comment-badge big-comment",
-                text: `📝${c.commentsCount}`,
-                isComment: true,
-              });
-          }
-
-          const isToday = iso === todayISO;
-          cell.innerHTML = `
-            <div style="font-weight:900; font-size:16px;">
-              ${d.getDate()}
-              ${isToday ? `<span class="today-chip">✨ Heute</span>` : ``}
-            </div>
-            <div class="badges">
-              ${badges
-                .map((b) => {
-                  if (b.isComment) {
-                    return `<span class="badge ${b.cls}" onclick="openDayCommentsFromBadge(event,'${iso}')">${b.text}</span>`;
-                  }
-                  return `<span class="badge ${b.cls}">${b.text}</span>`;
-                })
-                .join("")}
-            </div>
-          `;
-
-          cell.onclick = () => openDayView(iso);
-          cal.appendChild(cell);
-        }
-      }
-
-      // ----- 📝 Comments popup per day -----
       function openDayComments(iso) {
         popupISO = iso;
 
         const title = document.getElementById("dayCommentsTitle");
-        title.textContent = `📝 Kommentare – ${iso
-          .split("-")
-          .reverse()
-          .join(".")}`;
+        if (title)
+          title.textContent = `📝 Kommentare – ${iso
+            .split("-")
+            .reverse()
+            .join(".")}`;
 
         fillCommentPlants("popupCommentPlant", true);
-        document.getElementById("popupCommentText").value = "";
-        document.getElementById("popupCommentPinned").checked = false;
+
+        const ta = document.getElementById("popupCommentText");
+        const pin = document.getElementById("popupCommentPinned");
+        if (ta) ta.value = "";
+        if (pin) pin.checked = false;
 
         renderDayCommentsPopup();
-
-        const dlg = document.getElementById("dayCommentsDialog");
-        dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", "");
+        openDialog("dayCommentsDialog");
       }
 
       function closeDayComments() {
         popupISO = null;
-        const dlg = document.getElementById("dayCommentsDialog");
-        dlg.close ? dlg.close() : dlg.removeAttribute("open");
+        closeDialog("dayCommentsDialog");
       }
 
       function renderDayCommentsPopup() {
         const wrap = document.getElementById("dayCommentsList");
+        if (!wrap) return;
         wrap.innerHTML = "";
-
         if (!popupISO) return;
 
         const entries = loadEntries();
@@ -1966,44 +1862,350 @@
         if (!popupISO) return;
 
         const plant = (
-          document.getElementById("popupCommentPlant").value || ""
+          document.getElementById("popupCommentPlant")?.value || ""
         ).trim();
         const text = (
-          document.getElementById("popupCommentText").value || ""
+          document.getElementById("popupCommentText")?.value || ""
         ).trim();
-        const pinned = !!document.getElementById("popupCommentPinned").checked;
+        const pinned = !!document.getElementById("popupCommentPinned")?.checked;
 
-        if (!plant) {
-          document.getElementById("output").textContent =
-            "Bitte eine Pflanze auswählen 🙂";
-          return;
-        }
-        if (!text) {
-          document.getElementById("output").textContent =
-            "Bitte einen Kommentar eingeben 🙂";
-          return;
-        }
+        if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
+        if (!text) return out("Bitte einen Kommentar eingeben 🙂");
 
         saveCommentForISO(popupISO, plant, text, pinned);
 
-        document.getElementById("popupCommentText").value = "";
-        document.getElementById("popupCommentPinned").checked = false;
+        const ta = document.getElementById("popupCommentText");
+        const pin = document.getElementById("popupCommentPinned");
+        if (ta) ta.value = "";
+        if (pin) pin.checked = false;
 
-        document.getElementById("output").textContent =
-          "📝 Kommentar gespeichert ✅";
+        out("📝 Kommentar gespeichert ✅");
         renderAll();
         renderDayCommentsPopup();
         renderDayViewPopup();
       }
 
-      // ----- Misc -----
-      function clearAll() {
-        if (!confirm("Wirklich alle Einträge löschen?")) return;
-        localStorage.removeItem(STORAGE_KEY);
-        document.getElementById("output").textContent =
-          "Alle Einträge gelöscht.";
+      function editComment(id) {
+        const entries = loadEntries();
+        const idx = entries.findIndex(
+          (e) => e && e.type === "comment" && e.id === id
+        );
+        if (idx < 0) return;
+
+        const current = entries[idx];
+        const newText = prompt(
+          `Kommentar für ${current.plant} bearbeiten:`,
+          current.text || ""
+        );
+        if (newText === null) return;
+
+        const cleaned = String(newText).trim();
+        if (!cleaned) return alert("Kommentar darf nicht leer sein.");
+
+        entries[idx] = { ...current, text: cleaned };
+        saveEntries(entries);
+
+        out("📝 Kommentar aktualisiert ✅");
         renderAll();
+        if (popupISO) renderDayCommentsPopup();
+        renderDayViewPopup();
       }
+
+      function deleteComment(id) {
+        if (!confirm("Kommentar wirklich löschen?")) return;
+        const entries = loadEntries().filter(
+          (e) => !(e && e.type === "comment" && e.id === id)
+        );
+        saveEntries(entries);
+        out("🗑️ Kommentar gelöscht.");
+        renderAll();
+        if (popupISO) renderDayCommentsPopup();
+        renderDayViewPopup();
+      }
+
+      function togglePinComment(id) {
+        const entries = loadEntries();
+        const idx = entries.findIndex(
+          (e) => e && e.type === "comment" && e.id === id
+        );
+        if (idx < 0) return;
+        entries[idx] = { ...entries[idx], pinned: !entries[idx].pinned };
+        saveEntries(entries);
+        renderAll();
+        if (popupISO) renderDayCommentsPopup();
+        renderDayViewPopup();
+      }
+
+      // ==========================
+      // DAY VIEW DIALOG
+      // ==========================
+      function openDayView(iso) {
+        state.selectedISO = iso;
+        const title = document.getElementById("dayViewTitle");
+        if (title)
+          title.textContent = `📅 Tagesansicht – ${iso
+            .split("-")
+            .reverse()
+            .join(".")}`;
+
+        fillCommentPlants("dayPopupCommentPlant", true);
+
+        const ta = document.getElementById("dayPopupCommentText");
+        const pin = document.getElementById("dayPopupCommentPinned");
+        if (ta) ta.value = "";
+        if (pin) pin.checked = false;
+
+        renderDayViewPopup();
+        openDialog("dayViewDialog");
+      }
+
+      function closeDayView() {
+        closeDialog("dayViewDialog");
+      }
+
+      function pillMini(text, cls) {
+        return `<span class="pill-mini ${cls}">${text}</span>`;
+      }
+
+      function renderDayViewPopup() {
+        const body = document.getElementById("dayViewBody");
+        if (!body) return;
+        body.innerHTML = "";
+
+        const entries = loadEntries();
+        const iso = state.selectedISO;
+        const agg = aggregateDay(entries, iso);
+
+        const waterDone = new Set(agg.water.done || []);
+        const fertDone = new Set(agg.fertilize.done || []);
+
+        const commentsByPlant = new Map();
+        (agg.comments || []).forEach((c) => {
+          const k = c.plant || "Unbekannt";
+          commentsByPlant.set(k, (commentsByPlant.get(k) || 0) + 1);
+        });
+
+        function statusPillsFor(name) {
+          const pills = [];
+          if (waterDone.has(name)) pills.push(pillMini("💧", "water"));
+          if (fertDone.has(name)) pills.push(pillMini("🧪", "fert"));
+          const cc = commentsByPlant.get(name) || 0;
+          if (cc) pills.push(pillMini(`📝${cc}`, "note"));
+          if (!waterDone.has(name) && !fertDone.has(name))
+            pills.unshift(pillMini("—", "none"));
+          return pills.join("");
+        }
+
+        const all = getAllPlants();
+        const active = all.filter(
+          (p) => p.active !== false && p.room !== REMOVED_ROOM
+        );
+        const removed = all.filter(
+          (p) => p.room === REMOVED_ROOM || p.active === false
+        );
+
+        const activeGrouped = groupPlantsByRoom(active);
+        activeGrouped.forEach(([room, ps]) => {
+          if (room === REMOVED_ROOM) return;
+          if (!ps.length) return;
+
+          const roomCard = document.createElement("div");
+          roomCard.className = "comment-item";
+          roomCard.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
+
+          ps.forEach((p) => {
+            const line = document.createElement("div");
+            line.style.marginTop = "10px";
+            line.innerHTML = `🪴 <b>${escapeHtml(
+              p.name
+            )}</b><div class="status-pills">${statusPillsFor(p.name)}</div>`;
+            roomCard.appendChild(line);
+          });
+
+          body.appendChild(roomCard);
+        });
+
+        // Entfernte Pflanzen nur wenn an dem Tag relevant
+        const relevantNames = new Set(
+          [
+            ...(agg.water.snapshot || []),
+            ...(agg.fertilize.snapshot || []),
+            ...(agg.water.done || []),
+            ...(agg.fertilize.done || []),
+            ...(agg.comments || []).map((c) => c.plant),
+          ].filter(Boolean)
+        );
+
+        const removedRelevant = removed
+          .filter((p) => relevantNames.has(p.name))
+          .sort((a, b) => a.name.localeCompare(b.name, "de"));
+
+        if (removedRelevant.length) {
+          const roomCard = document.createElement("div");
+          roomCard.className = "comment-item";
+          roomCard.innerHTML = `<b>🏚️ ${escapeHtml(REMOVED_ROOM)}</b>
+        <div class="muted" style="margin-top:6px;">Diese Pflanzen wurden entfernt, werden aber für die Historie angezeigt.</div>`;
+
+          removedRelevant.forEach((p) => {
+            const line = document.createElement("div");
+            line.style.marginTop = "10px";
+            line.innerHTML = `🪴 <b>${escapeHtml(
+              p.name
+            )}</b><div class="status-pills">${statusPillsFor(p.name)}</div>`;
+            roomCard.appendChild(line);
+          });
+
+          body.appendChild(roomCard);
+        }
+
+        // Kommentare
+        const comments = agg.comments || [];
+        const commentsCard = document.createElement("div");
+        commentsCard.className = "comment-item";
+        commentsCard.innerHTML = "<b>📝 Kommentare</b>";
+
+        if (!comments.length) {
+          const p = document.createElement("div");
+          p.className = "muted";
+          p.style.marginTop = "8px";
+          p.textContent = "Keine Kommentare an diesem Tag.";
+          commentsCard.appendChild(p);
+        } else {
+          comments.forEach((c) => {
+            const item = document.createElement("div");
+            item.style.marginTop = "10px";
+            item.innerHTML =
+              `🪴 <b>${escapeHtml(c.plant)}</b>${
+                c.pinned ? " <span class='pill'>📌</span>" : ""
+              }` +
+              `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
+                c.text
+              )}</div>`;
+            commentsCard.appendChild(item);
+          });
+        }
+
+        body.appendChild(commentsCard);
+      }
+
+      function saveDayCommentFromPopup() {
+        const plant = (
+          document.getElementById("dayPopupCommentPlant")?.value || ""
+        ).trim();
+        const text = (
+          document.getElementById("dayPopupCommentText")?.value || ""
+        ).trim();
+        const pinned = !!document.getElementById("dayPopupCommentPinned")
+          ?.checked;
+
+        if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
+        if (!text) return out("Bitte einen Kommentar eingeben 🙂");
+
+        const iso = state.selectedISO;
+        saveCommentForISO(iso, plant, text, pinned);
+
+        const ta = document.getElementById("dayPopupCommentText");
+        const pin = document.getElementById("dayPopupCommentPinned");
+        if (ta) ta.value = "";
+        if (pin) pin.checked = false;
+
+        out("📝 Kommentar zum Tag gespeichert ✅");
+        renderAll();
+        if (popupISO) renderDayCommentsPopup();
+        renderDayViewPopup();
+      }
+
+      // ==========================
+      // CALENDAR
+      // ==========================
+      function renderCalendar(entries) {
+        const cal = document.getElementById("calendar");
+        const title = document.getElementById("monthTitle");
+        if (!cal || !title) return;
+
+        cal.innerHTML = "";
+
+        const base = new Date(
+          state.viewMonth.getFullYear(),
+          state.viewMonth.getMonth(),
+          1
+        );
+
+        title.textContent = base.toLocaleString("de-DE", {
+          month: "long",
+          year: "numeric",
+        });
+
+        const start = new Date(base);
+        const weekday = (start.getDay() + 6) % 7; // Mo=0
+        start.setDate(start.getDate() - weekday);
+
+        const counts = buildCounts(entries);
+        const todayISO = isoDate(new Date());
+        const labels = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+        labels.forEach((l) => {
+          const head = document.createElement("div");
+          head.className = "cal-head";
+          head.textContent = l;
+          cal.appendChild(head);
+        });
+
+        const total = getActivePlants().length;
+
+        for (let i = 0; i < 42; i++) {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          const iso = isoDate(d);
+
+          const cell = document.createElement("button");
+          cell.className = "day-btn";
+
+          if (d.getMonth() !== base.getMonth()) cell.style.opacity = "0.35";
+          if (iso === todayISO) cell.classList.add("today");
+          if (iso === state.selectedISO) cell.classList.add("selected");
+
+          const c = counts.get(iso);
+
+          const badges = [];
+          badges.push({ cls: "b-total", text: `🌿${total}` });
+
+          if (c?.hasAny) {
+            if (c?.waterDone?.size)
+              badges.push({ cls: "b-water", text: `💧${c.waterDone.size}` });
+            if (c?.fertDone?.size)
+              badges.push({ cls: "b-fert", text: `🧪${c.fertDone.size}` });
+            if (c?.commentsCount)
+              badges.push({
+                cls: "b-comment comment-badge big-comment",
+                text: `📝${c.commentsCount}`,
+                isComment: true,
+              });
+          }
+
+          const isToday = iso === todayISO;
+          cell.innerHTML = `
+        <div style="font-weight:900; font-size:16px;">
+          ${d.getDate()}
+          ${isToday ? `<span class="today-chip">✨ Heute</span>` : ``}
+        </div>
+        <div class="badges">
+          ${badges
+            .map((b) => {
+              if (b.isComment) {
+                return `<span class="badge ${b.cls}" onclick="openDayCommentsFromBadge(event,'${iso}')">${b.text}</span>`;
+              }
+              return `<span class="badge ${b.cls}">${b.text}</span>`;
+            })
+            .join("")}
+        </div>
+      `;
+
+          cell.onclick = () => openDayView(iso);
+          cal.appendChild(cell);
+        }
+      }
+
       function prevMonth() {
         state.viewMonth = new Date(
           state.viewMonth.getFullYear(),
@@ -2012,6 +2214,7 @@
         );
         renderAll();
       }
+
       function nextMonth() {
         state.viewMonth = new Date(
           state.viewMonth.getFullYear(),
@@ -2021,39 +2224,36 @@
         renderAll();
       }
 
+      // ==========================
+      // CLEAR ALL
+      // ==========================
+      function clearAll() {
+        if (!confirm("Wirklich alle Einträge löschen?")) return;
+        localStorage.removeItem(STORAGE_KEY);
+        out("Alle Einträge gelöscht.");
+        renderAll();
+      }
+
+      // ==========================
+      // RENDER ALL
+      // ==========================
       function renderAll() {
+        loadPlants(); // ensures defaults exist
         renderPlants();
+
         const entries = loadEntries();
         renderHistory(entries);
         renderCalendar(entries);
+
         if (popupISO) renderDayCommentsPopup();
         try {
           fillCommentPlants("dayPopupCommentPlant", true);
         } catch {}
       }
 
-      // Expose
-      window.openHistory = openHistory;
-      window.closeHistory = closeHistory;
-      window.openPlants = openPlants;
-      window.closePlants = closePlants;
-
-      window.addPlant = addPlant;
-      window.renamePlant = renamePlant;
-      window.removePlant = removePlant;
-
-      window.openRoomDialog = openRoomDialog;
-      window.closeRoomDialog = closeRoomDialog;
-      window.saveRoomDialog = saveRoomDialog;
-
-      window.deletePlantCancel = deletePlantCancel;
-      window.deletePlantDeleteHistory = deletePlantDeleteHistory;
-      window.deletePlantKeepHistory = deletePlantKeepHistory;
-
-      window.prevMonth = prevMonth;
-      window.nextMonth = nextMonth;
-      window.clearAll = clearAll;
-
+      // ==========================
+      // EXPORT FOR inline onclick=""
+      // ==========================
       window.openAction = openAction;
       window.openActionWithDate = openActionWithDate;
       window.openActionForSelectedDay = openActionForSelectedDay;
@@ -2082,6 +2282,40 @@
       window.deleteComment = deleteComment;
       window.togglePinComment = togglePinComment;
 
+      window.prevMonth = prevMonth;
+      window.nextMonth = nextMonth;
+
+      window.openHistory = openHistory;
+      window.closeHistory = closeHistory;
+
+      window.openPlants = openPlants;
+      window.closePlants = closePlants;
+
+      window.addPlant = addPlant;
+      window.renamePlant = renamePlant;
+      window.removePlant = removePlant;
+
+      window.openRoomDialog = openRoomDialog;
+      window.closeRoomDialog = closeRoomDialog;
+      window.saveRoomDialog = saveRoomDialog;
+
+      window.deletePlantCancel = deletePlantCancel;
+      window.deletePlantDeleteHistory = deletePlantDeleteHistory;
+      window.deletePlantKeepHistory = deletePlantKeepHistory;
+
+      window.openPlantOverview = openPlantOverview;
+      window.closePlantOverview = closePlantOverview;
+
+      window.openPlantNote = openPlantNote;
+      window.closePlantNote = closePlantNote;
+      window.savePlantNote = savePlantNote;
+      window.clearPlantNote = clearPlantNote;
+
+      window.clearAll = clearAll;
+
+      // ==========================
+      // INIT
+      // ==========================
       renderAll();
     </script>
   </body>
