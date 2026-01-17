@@ -536,6 +536,25 @@
         <button class="btn-ghost" onclick="openPlants()">
           🪴 Pflanzen verwalten
         </button>
+        <button class="btn-ghost" onclick="exportLocalData()">⬇️ Backup</button>
+
+        <label
+          class="btn-ghost"
+          style="
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+          "
+        >
+          ⬆️ Import
+          <input
+            type="file"
+            accept="application/json"
+            style="display: none"
+            onchange="importLocalData(this.files[0])"
+          />
+        </label>
       </div>
     </div>
 
@@ -2317,6 +2336,71 @@
       // INIT
       // ==========================
       renderAll();
+      // Export button
+      function exportLocalData() {
+        const payload = {
+          exportedAt: new Date().toISOString(),
+          entries: JSON.parse(
+            localStorage.getItem("pflanzenlog_entries_v12") || "[]"
+          ),
+          plants: JSON.parse(
+            localStorage.getItem("pflanzenlog_plants_v3_rooms_active") || "[]"
+          ),
+          plantNotes: JSON.parse(
+            localStorage.getItem("pflanzenlog_plant_notes_v1") || "{}"
+          ),
+        };
+
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `pflanzenlog-backup-${new Date()
+          .toISOString()
+          .slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(url);
+        document.getElementById("output").textContent =
+          "✅ Backup heruntergeladen.";
+      }
+
+      function importLocalData(file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(reader.result);
+
+            if (data.entries)
+              localStorage.setItem(
+                "pflanzenlog_entries_v12",
+                JSON.stringify(data.entries)
+              );
+            if (data.plants)
+              localStorage.setItem(
+                "pflanzenlog_plants_v3_rooms_active",
+                JSON.stringify(data.plants)
+              );
+            if (data.plantNotes)
+              localStorage.setItem(
+                "pflanzenlog_plant_notes_v1",
+                JSON.stringify(data.plantNotes)
+              );
+
+            document.getElementById("output").textContent =
+              "✅ Backup importiert.";
+            if (typeof renderAll === "function") renderAll();
+          } catch (e) {
+            alert("Import fehlgeschlagen: " + e.message);
+          }
+        };
+        reader.readAsText(file);
+      }
     </script>
   </body>
 </html>
