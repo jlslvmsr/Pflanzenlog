@@ -516,6 +516,25 @@
       <p id="output"></p>
     </div>
 
+    <div class="card" id="authCard" style="margin-bottom: 12px">
+      <h2>Login</h2>
+      <div class="row">
+        <input
+          id="emailInput"
+          type="email"
+          placeholder="deine@email.de"
+          style="flex: 1"
+        />
+        <button class="btn-note" onclick="sendMagicLink()">
+          Magic Link senden
+        </button>
+      </div>
+      <div class="row" style="justify-content: space-between">
+        <span class="muted" id="authStatus">Nicht eingeloggt</span>
+        <button class="btn-ghost" onclick="logout()">Logout</button>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Kalender</h2>
 
@@ -808,19 +827,143 @@
         <button class="btn-note" onclick="savePlantNote()">Speichern</button>
       </div>
     </dialog>
-
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
+      // ==== iPad Debug Console (robust) ====
+      (function () {
+        let box = null;
+        const buffer = [];
+
+        function ensureBox() {
+          if (box) return box;
+          if (!document.body) return null;
+
+          box = document.createElement("div");
+          box.id = "debugConsole";
+          box.style.cssText = `
+            position: fixed; left: 10px; right: 10px; bottom: 10px;
+            max-height: 40vh; overflow: auto; z-index: 999999;
+            background: rgba(0,0,0,.78); color: #fff;
+            border: 1px solid rgba(255,255,255,.2);
+            border-radius: 14px; padding: 10px; font: 12px/1.4 -apple-system,system-ui;
+            white-space: pre-wrap;
+          `;
+          box.textContent = "🧪 Debug-Console aktiv\n";
+          document.body.appendChild(box);
+
+          buffer.splice(0).forEach((line) => {
+            box.textContent += line + "\n";
+          });
+          box.scrollTop = box.scrollHeight;
+          return box;
+        }
+
+        function write(prefix, args) {
+          const msg = Array.from(args)
+            .map((a) => {
+              try {
+                return typeof a === "string" ? a : JSON.stringify(a);
+              } catch {
+                return String(a);
+              }
+            })
+            .join(" ");
+          const line = `${prefix} ${msg}`;
+          const b = ensureBox();
+          if (b) {
+            b.textContent += line + "\n";
+            b.scrollTop = b.scrollHeight;
+          } else {
+            buffer.push(line);
+          }
+        }
+
+        const origLog = console.log.bind(console);
+        const origErr = console.error.bind(console);
+
+        console.log = (...args) => {
+          origLog(...args);
+          write("LOG:", args);
+        };
+        console.error = (...args) => {
+          origErr(...args);
+          write("ERR:", args);
+        };
+
+        window.addEventListener("error", (e) => {
+          console.error(
+            "Uncaught:",
+            e.message,
+            "at",
+            e.filename + ":" + e.lineno
+          );
+        });
+        window.addEventListener("unhandledrejection", (e) => {
+          console.error("Promise rejection:", e.reason);
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+          ensureBox();
+          console.log("DOMContentLoaded ✅");
+        });
+      })();
+
+      console.log("SCRIPT START");
+
       // ==========================
-      // STORAGE KEYS / SETTINGS
+      // SUPABASE SETUP
       // ==========================
+      const SUPABASE_URL = "https://bwdjojgquyjnydhdyuqw.supabase.co"; // ohne trailing slash
+      const SUPABASE_ANON_KEY =
+        "sb_publishable_9duw_kZYTLARlp9wTDDZPQ_SOpPxSNg";
+
+      const sbLib = window.supabase || globalThis.supabase;
+      if (!sbLib || typeof sbLib.createClient !== "function") {
+        console.error("Supabase SDK nicht geladen (createClient fehlt).");
+      }
+
+      const supabaseClient =
+        sbLib && typeof sbLib.createClient === "function"
+          ? sbLib.createClient(
+              SUPABASE_URL.replace(/\/$/, ""),
+              SUPABASE_ANON_KEY
+            )
+          : null;
+
+      // ==========================
+      // KEYS
+      // ==========================
+      const DEVICE_KEY = "pflanzenlog_device_id_v1";
+
       const STORAGE_KEY = "pflanzenlog_entries_v12";
       const PLANTS_KEY = "pflanzenlog_plants_v3_rooms_active";
-      const PLANT_NOTES_KEY = "pflanzenlog_plant_notes_v1"; // { "Monstera": "Text..." }
+      const PLANT_NOTES_KEY = "pflanzenlog_plant_notes_v1";
 
+      // ==========================
+      // DEVICE ID
+      // ==========================
+      function getDeviceId() {
+        let id = localStorage.getItem(DEVICE_KEY);
+        if (!id) {
+          id = crypto?.randomUUID
+            ? crypto.randomUUID()
+            : String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+          localStorage.setItem(DEVICE_KEY, id);
+        }
+        return id;
+      }
+      const DEVICE_ID = getDeviceId();
+
+      // ==========================
+      // ROOMS
+      // ==========================
       const ROOMS_BASE = ["Wohnzimmer", "Schlafzimmer", "Flur", "Büro"];
       const REMOVED_ROOM = "Entfernte Pflanzen";
       const ROOMS_ALL = [...ROOMS_BASE, REMOVED_ROOM];
 
+      // ==========================
+      // STATE
+      // ==========================
       const state = {
         viewMonth: new Date(),
         selectedISO: isoDate(new Date()),
@@ -892,20 +1035,223 @@
       }
 
       // ==========================
-      // STORAGE LOAD/SAVE
+      // LOCAL CACHE (entries/plants/notes)
       // ==========================
-      function loadEntries() {
+      function loadEntriesFromLocal() {
         try {
           return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
         } catch {
           return [];
         }
       }
-
-      function saveEntries(entries) {
+      function saveEntriesToLocal(entries) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(entries || []));
       }
 
+      function loadPlantsFromLocal() {
+        try {
+          return JSON.parse(localStorage.getItem(PLANTS_KEY)) || [];
+        } catch {
+          return [];
+        }
+      }
+      function savePlantsToLocal(plants) {
+        localStorage.setItem(PLANTS_KEY, JSON.stringify(plants || []));
+      }
+
+      function loadNotesFromLocal() {
+        try {
+          return JSON.parse(localStorage.getItem(PLANT_NOTES_KEY)) || {};
+        } catch {
+          return {};
+        }
+      }
+      function saveNotesToLocal(map) {
+        localStorage.setItem(PLANT_NOTES_KEY, JSON.stringify(map || {}));
+      }
+
+      // ==========================
+      // SUPABASE HELPERS (generic replaceAll per table)
+      // ==========================
+      async function sbFetchPayloads(table) {
+        if (!supabaseClient) throw new Error("supabaseClient ist null");
+
+        const { data, error } = await supabaseClient
+          .from(table)
+          .select("payload, ts")
+          .eq("device_id", DEVICE_ID)
+          .order("ts", { ascending: false })
+          .limit(5000);
+
+        if (error) throw error;
+        return (data || []).map((r) => r.payload).filter(Boolean);
+      }
+
+      async function sbReplaceAll(table, payloads, tsGetter) {
+        if (!supabaseClient) throw new Error("supabaseClient ist null");
+
+        const { error: delErr } = await supabaseClient
+          .from(table)
+          .delete()
+          .eq("device_id", DEVICE_ID);
+
+        if (delErr) throw delErr;
+
+        const rows = (payloads || []).map((p) => ({
+          device_id: DEVICE_ID,
+          ts: typeof tsGetter === "function" ? tsGetter(p) : Date.now(),
+          payload: p,
+        }));
+
+        if (!rows.length) return;
+
+        const CHUNK = 200;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          const slice = rows.slice(i, i + CHUNK);
+          const { error } = await supabaseClient.from(table).insert(slice);
+          if (error) throw error;
+        }
+      }
+
+      // ==========================
+      // PUBLIC DATA API (REST DER APP NUTZT NUR DAS)
+      // Supabase = Source of Truth
+      // localStorage = Cache/Fallback
+      // ==========================
+
+      // ---- entries
+      function loadEntries() {
+        return loadEntriesFromLocal();
+      }
+
+      let syncTimerEntries = null;
+      function saveEntries(entries) {
+        saveEntriesToLocal(entries);
+        scheduleEntriesSync(entries);
+      }
+      function scheduleEntriesSync(entries) {
+        if (syncTimerEntries) clearTimeout(syncTimerEntries);
+        syncTimerEntries = setTimeout(async () => {
+          try {
+            console.log("☁️ Sync entries…");
+            out("☁️ Sync entries…");
+            await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
+            console.log("✅ entries synced");
+            out("✅ Supabase Sync ok");
+          } catch (e) {
+            console.error("❌ entries sync error:", e.message, e);
+            out("❌ Supabase Sync Fehler: " + e.message);
+          }
+        }, 600);
+      }
+
+      // ---- plants
+      function loadPlants() {
+        const local = loadPlantsFromLocal();
+        if (Array.isArray(local) && local.length)
+          return local.map(normalizePlant).filter(Boolean);
+        // wenn leer: defaults setzen
+        const defaults = [
+          { name: "Monstera", room: "Wohnzimmer", active: true },
+          { name: "Orchidee", room: "Schlafzimmer", active: true },
+          { name: "Calathea", room: "Büro", active: true },
+          { name: "Pothos", room: "Flur", active: true },
+        ]
+          .map(normalizePlant)
+          .filter(Boolean);
+        savePlantsToLocal(defaults);
+        return defaults;
+      }
+
+      let syncTimerPlants = null;
+      function savePlants(plants) {
+        const cleaned = (plants || []).map(normalizePlant).filter(Boolean);
+        savePlantsToLocal(cleaned);
+        schedulePlantsSync(cleaned);
+      }
+      function schedulePlantsSync(plants) {
+        if (syncTimerPlants) clearTimeout(syncTimerPlants);
+        syncTimerPlants = setTimeout(async () => {
+          try {
+            console.log("☁️ Sync plants…");
+            out("☁️ Sync plants…");
+            await sbReplaceAll("plants", plants, () => Date.now());
+            console.log("✅ plants synced");
+            out("✅ Supabase Sync ok");
+          } catch (e) {
+            console.error("❌ plants sync error:", e.message, e);
+            out("❌ Supabase Sync Fehler: " + e.message);
+          }
+        }, 600);
+      }
+
+      // ---- plantNotes
+      function loadPlantNotes() {
+        return loadNotesFromLocal();
+      }
+
+      let syncTimerNotes = null;
+      function savePlantNotes(map) {
+        saveNotesToLocal(map || {});
+        scheduleNotesSync(map || {});
+      }
+      function scheduleNotesSync(map) {
+        if (syncTimerNotes) clearTimeout(syncTimerNotes);
+        syncTimerNotes = setTimeout(async () => {
+          try {
+            console.log("☁️ Sync plant_notes…");
+            out("☁️ Sync plant notes…");
+            await sbReplaceAll("plant_notes", [map], () => Date.now());
+            console.log("✅ plant_notes synced");
+            out("✅ Supabase Sync ok");
+          } catch (e) {
+            console.error("❌ plant_notes sync error:", e.message, e);
+            out("❌ Supabase Sync Fehler: " + e.message);
+          }
+        }, 600);
+      }
+
+      // ==========================
+      // INIT: remote -> cache -> render
+      // ==========================
+      async function initFromSupabase() {
+        if (!supabaseClient) {
+          out("❌ Supabase SDK fehlt");
+          return;
+        }
+
+        try {
+          console.log("⬇️ Lade entries von Supabase…");
+          const remoteEntries = await sbFetchPayloads("entries");
+          saveEntriesToLocal(remoteEntries);
+          console.log("✅ entries loaded:", remoteEntries.length);
+
+          console.log("⬇️ Lade plants von Supabase…");
+          const remotePlants = await sbFetchPayloads("plants");
+          if (remotePlants.length) savePlantsToLocal(remotePlants);
+          console.log("✅ plants loaded:", remotePlants.length);
+
+          console.log("⬇️ Lade plant_notes von Supabase…");
+          const remoteNotesArr = await sbFetchPayloads("plant_notes");
+          const remoteNotes = remoteNotesArr[0] || {};
+          if (remoteNotes && typeof remoteNotes === "object")
+            saveNotesToLocal(remoteNotes);
+          console.log("✅ plant_notes loaded");
+
+          out("✅ Supabase geladen");
+        } catch (e) {
+          console.error(
+            "⚠️ Supabase load error (fallback local):",
+            e.message,
+            e
+          );
+          out("⚠️ Supabase nicht erreichbar – nutze local Cache");
+        }
+      }
+
+      // ==========================
+      // NORMALIZE PLANT + GETTERS
+      // ==========================
       function normalizePlant(p) {
         const name = String(p?.name || "").trim();
         if (!name) return null;
@@ -915,114 +1261,28 @@
         return { name, room, active };
       }
 
-      function migrateOldPlantsIfNeeded() {
-        // v2 -> v3
-        try {
-          const v2 = JSON.parse(
-            localStorage.getItem("pflanzenlog_plants_v2_rooms")
-          );
-          if (Array.isArray(v2) && v2.length) {
-            const migrated = v2
-              .map((x) => normalizePlant({ ...x, active: true }))
-              .filter(Boolean);
-            localStorage.setItem(PLANTS_KEY, JSON.stringify(migrated));
-            return migrated;
-          }
-        } catch {}
-
-        // v1 -> v3
-        try {
-          const v1 = JSON.parse(localStorage.getItem("pflanzenlog_plants_v1"));
-          if (Array.isArray(v1) && v1.length) {
-            const migrated =
-              typeof v1[0] === "string"
-                ? v1
-                    .map((name) =>
-                      normalizePlant({ name, room: "Wohnzimmer", active: true })
-                    )
-                    .filter(Boolean)
-                : v1
-                    .map((x) =>
-                      normalizePlant({
-                        name: x.name,
-                        room: "Wohnzimmer",
-                        active: true,
-                      })
-                    )
-                    .filter(Boolean);
-
-            localStorage.setItem(PLANTS_KEY, JSON.stringify(migrated));
-            return migrated;
-          }
-        } catch {}
-
-        // Defaults (damit nicht "alles leer" ist)
-        const defaults = [
-          { name: "Monstera", room: "Wohnzimmer", active: true },
-          { name: "Orchidee", room: "Schlafzimmer", active: true },
-          { name: "Calathea", room: "Büro", active: true },
-          { name: "Pothos", room: "Flur", active: true },
-        ]
-          .map(normalizePlant)
-          .filter(Boolean);
-
-        localStorage.setItem(PLANTS_KEY, JSON.stringify(defaults));
-        return defaults;
+      function getAllPlants() {
+        return loadPlants();
       }
-
-      function loadPlants() {
-        try {
-          const v3 = JSON.parse(localStorage.getItem(PLANTS_KEY));
-          if (Array.isArray(v3) && v3.length)
-            return v3.map(normalizePlant).filter(Boolean);
-        } catch {}
-        return migrateOldPlantsIfNeeded();
-      }
-
-      function savePlants(plants) {
-        localStorage.setItem(
-          PLANTS_KEY,
-          JSON.stringify((plants || []).map(normalizePlant).filter(Boolean))
+      function getActivePlants() {
+        return loadPlants().filter(
+          (p) => p.active !== false && p.room !== REMOVED_ROOM
         );
       }
-
-      function loadPlantNotes() {
-        try {
-          return JSON.parse(localStorage.getItem(PLANT_NOTES_KEY)) || {};
-        } catch {
-          return {};
-        }
-      }
-
-      function savePlantNotes(map) {
-        localStorage.setItem(PLANT_NOTES_KEY, JSON.stringify(map || {}));
+      function activePlantNames() {
+        return getActivePlants().map((p) => p.name);
       }
 
       function getPlantNote(name) {
         const notes = loadPlantNotes();
         return String(notes?.[name] || "").trim();
       }
-
       function setPlantNote(name, text) {
         const notes = loadPlantNotes();
         const cleaned = String(text || "").trim();
         if (!cleaned) delete notes[name];
         else notes[name] = cleaned;
         savePlantNotes(notes);
-      }
-
-      function getAllPlants() {
-        return loadPlants();
-      }
-
-      function getActivePlants() {
-        return loadPlants().filter(
-          (p) => p.active !== false && p.room !== REMOVED_ROOM
-        );
-      }
-
-      function activePlantNames() {
-        return getActivePlants().map((p) => p.name);
       }
 
       function groupPlantsByRoom(plants) {
@@ -1137,11 +1397,8 @@
               pObj.active === false || pObj.room === REMOVED_ROOM
                 ? " (entfernt)"
                 : "";
-            left.innerHTML = `<b>${escapeHtml(
-              pObj.name
-            )}${inactiveHint}</b><div class="muted">🏠 ${escapeHtml(
-              pObj.room
-            )}</div>`;
+            left.innerHTML = `<b>${escapeHtml(pObj.name)}${inactiveHint}</b>
+              <div class="muted">🏠 ${escapeHtml(pObj.room)}</div>`;
 
             const actions = document.createElement("div");
             actions.className = "plant-actions";
@@ -1166,13 +1423,8 @@
             delBtn.textContent = "🗑️";
             delBtn.onclick = () => removePlant(pObj.name);
 
-            actions.appendChild(noteBtn);
-            actions.appendChild(roomBtn);
-            actions.appendChild(renameBtn);
-            actions.appendChild(delBtn);
-
-            row.appendChild(left);
-            row.appendChild(actions);
+            actions.append(noteBtn, roomBtn, renameBtn, delBtn);
+            row.append(left, actions);
             list.appendChild(row);
           });
         });
@@ -1182,7 +1434,6 @@
         renderPlants();
         openDialog("plantsDialog");
       }
-
       function closePlants() {
         closeDialog("plantsDialog");
       }
@@ -1206,6 +1457,7 @@
           room: ROOMS_BASE.includes(room) ? room : "Wohnzimmer",
           active: true,
         });
+
         savePlants(plants);
 
         if (inp) inp.value = "";
@@ -1233,17 +1485,16 @@
           return;
         }
 
-        savePlants(
-          plants.map((p) => (p.name === oldName ? { ...p, name: cleaned } : p))
+        const updatedPlants = plants.map((p) =>
+          p.name === oldName ? { ...p, name: cleaned } : p
         );
+        savePlants(updatedPlants);
 
-        // Entries mit umbenennen
         const entries = loadEntries().map((e) =>
           renamePlantInEntry(e, oldName, cleaned)
         );
         saveEntries(entries);
 
-        // Plant notes umbenennen
         const notes = loadPlantNotes();
         if (notes[oldName]) {
           notes[cleaned] = notes[oldName];
@@ -1257,7 +1508,6 @@
 
       function renamePlantInEntry(e, oldName, newName) {
         if (!e) return e;
-
         if (e.type === "batch") {
           const repl = (arr) =>
             Array.isArray(arr)
@@ -1297,7 +1547,6 @@
         sel.value = ROOMS_ALL.includes(current?.room)
           ? current.room
           : "Wohnzimmer";
-
         openDialog("roomDialog");
       }
 
@@ -1311,14 +1560,14 @@
         const room = document.getElementById("roomSelect")?.value;
 
         const plants = getAllPlants();
-        savePlants(
-          plants.map((p) => {
-            if (p.name !== pendingRoomPlant) return p;
-            const nextRoom = ROOMS_ALL.includes(room) ? room : "Wohnzimmer";
-            const nextActive = nextRoom === REMOVED_ROOM ? false : true;
-            return { ...p, room: nextRoom, active: nextActive };
-          })
-        );
+        const updated = plants.map((p) => {
+          if (p.name !== pendingRoomPlant) return p;
+          const nextRoom = ROOMS_ALL.includes(room) ? room : "Wohnzimmer";
+          const nextActive = nextRoom === REMOVED_ROOM ? false : true;
+          return { ...p, room: nextRoom, active: nextActive };
+        });
+
+        savePlants(updated);
 
         out(`🏠 Raum gesetzt: ${pendingRoomPlant} → ${room}`);
         closeRoomDialog();
@@ -1334,6 +1583,7 @@
         const target = plants.find((p) => p.name === name);
         const isActive =
           target && target.active !== false && target.room !== REMOVED_ROOM;
+
         if (isActive && activeCount <= 1) {
           out("Mindestens 1 aktive Pflanze behalten 🙂");
           return;
@@ -1364,11 +1614,10 @@
         const name = pendingPlantToDelete;
 
         const plants = getAllPlants();
-        savePlants(
-          plants.map((p) =>
-            p.name !== name ? p : { ...p, room: REMOVED_ROOM, active: false }
-          )
+        const updated = plants.map((p) =>
+          p.name !== name ? p : { ...p, room: REMOVED_ROOM, active: false }
         );
+        savePlants(updated);
 
         pendingPlantToDelete = null;
         closeDeletePlantDialog();
@@ -1380,7 +1629,6 @@
 
       function removePlantFromEntry(e, name) {
         if (!e) return e;
-
         if (e.type === "batch") {
           const filt = (arr) =>
             Array.isArray(arr) ? arr.filter((x) => x !== name) : arr;
@@ -1531,7 +1779,6 @@
         renderAll();
         openDialog("historyDialog");
       }
-
       function closeHistory() {
         closeDialog("historyDialog");
       }
@@ -1623,8 +1870,7 @@
           const text = document.createElement("span");
           text.textContent = `${pObj.name} (${pObj.room || "Wohnzimmer"})`;
 
-          row.appendChild(cb);
-          row.appendChild(text);
+          row.append(cb, text);
           list.appendChild(row);
         });
       }
@@ -1696,6 +1942,7 @@
           });
         }
 
+        // IMPORTANT: saveEntries() triggert bei dir die Supabase-Sync-Strategie
         saveEntries(entries);
 
         out(
@@ -1838,7 +2085,7 @@
           header.className = "comment-header";
 
           const left = document.createElement("div");
-          left.innerHTML = `🪴 <b>${escapeHtml(c.plant)}</b> ${
+          left.innerHTML = `🪴 <b>${escapeHtml(c.plant)}</b>${
             c.pinned ? " <span class='pill'>📌</span>" : ""
           }`;
 
@@ -1860,19 +2107,14 @@
           delBtn.textContent = "🗑️";
           delBtn.onclick = () => deleteComment(c.id);
 
-          actions.appendChild(pinBtn);
-          actions.appendChild(editBtn);
-          actions.appendChild(delBtn);
-
-          header.appendChild(left);
-          header.appendChild(actions);
+          actions.append(pinBtn, editBtn, delBtn);
+          header.append(left, actions);
 
           const text = document.createElement("div");
           text.className = "comment-text";
           text.textContent = c.text;
 
-          box.appendChild(header);
-          box.appendChild(text);
+          box.append(header, text);
           wrap.appendChild(box);
         });
       }
@@ -1936,6 +2178,7 @@
           (e) => !(e && e.type === "comment" && e.id === id)
         );
         saveEntries(entries);
+
         out("🗑️ Kommentar gelöscht.");
         renderAll();
         if (popupISO) renderDayCommentsPopup();
@@ -1948,8 +2191,10 @@
           (e) => e && e.type === "comment" && e.id === id
         );
         if (idx < 0) return;
+
         entries[idx] = { ...entries[idx], pinned: !entries[idx].pinned };
         saveEntries(entries);
+
         renderAll();
         if (popupISO) renderDayCommentsPopup();
         renderDayViewPopup();
@@ -1960,6 +2205,7 @@
       // ==========================
       function openDayView(iso) {
         state.selectedISO = iso;
+
         const title = document.getElementById("dayViewTitle");
         if (title)
           title.textContent = `📅 Tagesansicht – ${iso
@@ -2035,9 +2281,8 @@
           ps.forEach((p) => {
             const line = document.createElement("div");
             line.style.marginTop = "10px";
-            line.innerHTML = `🪴 <b>${escapeHtml(
-              p.name
-            )}</b><div class="status-pills">${statusPillsFor(p.name)}</div>`;
+            line.innerHTML = `🪴 <b>${escapeHtml(p.name)}</b>
+          <div class="status-pills">${statusPillsFor(p.name)}</div>`;
             roomCard.appendChild(line);
           });
 
@@ -2068,9 +2313,8 @@
           removedRelevant.forEach((p) => {
             const line = document.createElement("div");
             line.style.marginTop = "10px";
-            line.innerHTML = `🪴 <b>${escapeHtml(
-              p.name
-            )}</b><div class="status-pills">${statusPillsFor(p.name)}</div>`;
+            line.innerHTML = `🪴 <b>${escapeHtml(p.name)}</b>
+          <div class="status-pills">${statusPillsFor(p.name)}</div>`;
             roomCard.appendChild(line);
           });
 
@@ -2251,6 +2495,11 @@
         localStorage.removeItem(STORAGE_KEY);
         out("Alle Einträge gelöscht.");
         renderAll();
+
+        // OPTIONAL: wenn du Supabase als Source-of-Truth nutzt, kannst du hier auch remote löschen.
+        // Lass das nur aktiv, wenn du wirklich ALLES remote weg haben willst.
+        // (Wenn du schon Funktionen dafür hast, hier einhängen.)
+        // scheduleSupabaseSync(loadEntries()); // oder: replaceAllEntriesInSupabase([])
       }
 
       // ==========================
@@ -2333,74 +2582,134 @@
       window.clearAll = clearAll;
 
       // ==========================
-      // INIT
+      // AUTH (Magic Link) + INIT
       // ==========================
-      renderAll();
-      // Export button
-      function exportLocalData() {
-        const payload = {
-          exportedAt: new Date().toISOString(),
-          entries: JSON.parse(
-            localStorage.getItem("pflanzenlog_entries_v12") || "[]"
-          ),
-          plants: JSON.parse(
-            localStorage.getItem("pflanzenlog_plants_v3_rooms_active") || "[]"
-          ),
-          plantNotes: JSON.parse(
-            localStorage.getItem("pflanzenlog_plant_notes_v1") || "{}"
-          ),
-        };
 
-        const blob = new Blob([JSON.stringify(payload, null, 2)], {
-          type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
+      async function sendMagicLink() {
+        try {
+          const email = (
+            document.getElementById("emailInput")?.value || ""
+          ).trim();
+          if (!email) return out("Bitte Email eingeben 🙂");
 
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `pflanzenlog-backup-${new Date()
-          .toISOString()
-          .slice(0, 10)}.json`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+          out("📨 Magic Link wird gesendet…");
+          console.log("📨 sende Magic Link an", email);
 
-        URL.revokeObjectURL(url);
-        document.getElementById("output").textContent =
-          "✅ Backup heruntergeladen.";
+          const { data, error } = await supabaseClient.auth.signInWithOtp({
+            email,
+            options: {
+              // wichtig: muss in Supabase Redirect URLs erlaubt sein
+              emailRedirectTo: window.location.href.split("#")[0],
+            },
+          });
+
+          if (error) throw error;
+
+          out("✅ Link gesendet! Check deine Mail 😊");
+          console.log("✅ Magic Link gesendet", data);
+        } catch (e) {
+          console.error("❌ Magic Link Fehler:", e);
+          out("❌ Magic Link Fehler: " + (e?.message || e));
+        }
       }
 
-      function importLocalData(file) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          try {
-            const data = JSON.parse(reader.result);
+      async function logout() {
+        try {
+          await supabaseClient.auth.signOut();
+          out("👋 Ausgeloggt.");
+          console.log("👋 ausgeloggt");
+          updateAuthUI(null);
+          // optional: UI “leer” oder local cache anzeigen
+          renderAll();
+        } catch (e) {
+          console.error("❌ Logout Fehler:", e);
+          out("❌ Logout Fehler: " + (e?.message || e));
+        }
+      }
 
-            if (data.entries)
-              localStorage.setItem(
-                "pflanzenlog_entries_v12",
-                JSON.stringify(data.entries)
-              );
-            if (data.plants)
-              localStorage.setItem(
-                "pflanzenlog_plants_v3_rooms_active",
-                JSON.stringify(data.plants)
-              );
-            if (data.plantNotes)
-              localStorage.setItem(
-                "pflanzenlog_plant_notes_v1",
-                JSON.stringify(data.plantNotes)
-              );
+      function updateAuthUI(session) {
+        const status = document.getElementById("authStatus");
+        if (!status) return;
 
-            document.getElementById("output").textContent =
-              "✅ Backup importiert.";
-            if (typeof renderAll === "function") renderAll();
-          } catch (e) {
-            alert("Import fehlgeschlagen: " + e.message);
+        if (session?.user) {
+          status.textContent = `Eingeloggt: ${
+            session.user.email || session.user.id
+          }`;
+        } else {
+          status.textContent = "Nicht eingeloggt";
+        }
+      }
+
+      // Hilfsfunktion: Session holen (und ggf. URL-Hash verarbeiten)
+      async function getSessionSafe() {
+        // Supabase v2 kann Session aus URL automatisch ziehen.
+        const { data, error } = await supabaseClient.auth.getSession();
+        if (error) throw error;
+        return data.session;
+      }
+
+      // ==========================
+      // SUPABASE LOADS (Skeleton)
+      // ==========================
+      // HIER kommen gleich die echten Loader für entries/plants/plantNotes rein.
+      // Für jetzt erstmal nur ein "logged in?"-Beweis.
+
+      async function initApp() {
+        console.log("🚀 initApp gestartet");
+        try {
+          // 1) Session prüfen
+          const session = await getSessionSafe();
+          updateAuthUI(session);
+
+          if (!session) {
+            console.log("🔒 Kein Login -> zeige lokale Daten");
+            out("🔒 Bitte einloggen (Magic Link), um Geräte-Sync zu nutzen.");
+            renderAll(); // zeigt local cache
+            console.log("✅ initApp fertig (local)");
+            return;
           }
-        };
-        reader.readAsText(file);
+
+          // 2) Wenn eingeloggt: hier werden wir Supabase als Quelle laden
+          out("✅ Eingeloggt. Lade Daten von Supabase…");
+          console.log("✅ Eingeloggt -> lade Supabase Daten…");
+
+          // TODO: in deinem nächsten Schritt:
+          // await initFromSupabase();  // entries + plants + notes
+          // renderAll();
+
+          renderAll(); // vorerst: zeigt weiterhin local, bis wir initFromSupabase fertig haben
+          out("✅ Eingeloggt (Supabase Load kommt als nächstes)");
+          console.log("✅ initApp fertig");
+        } catch (e) {
+          console.error("❌ initApp Fehler:", e);
+          out("❌ initApp Fehler: " + (e?.message || e));
+          renderAll();
+        }
       }
+
+      // Wichtig: auf Auth-Events reagieren (Magic link login passiert manchmal “nachträglich”)
+      supabaseClient.auth.onAuthStateChange((event, session) => {
+        console.log("🔔 Auth event:", event);
+        updateAuthUI(session);
+
+        // wenn Login gerade passiert ist: dann neu laden
+        if (event === "SIGNED_IN") {
+          out("✅ Login erkannt. Daten werden geladen…");
+          // später: initFromSupabase()
+          renderAll();
+        }
+      });
+
+      // Start
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initApp);
+      } else {
+        initApp();
+      }
+
+      // Exports für onclick im HTML:
+      window.sendMagicLink = sendMagicLink;
+      window.logout = logout;
     </script>
   </body>
 </html>
