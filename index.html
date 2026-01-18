@@ -891,9 +891,15 @@
   window.addEventListener("error", (e) => {
     console.error("Uncaught:", e.message, "at", e.filename + ":" + e.lineno);
   });
-  window.addEventListener("unhandledrejection", (e) => {
-    console.error("Promise rejection:", e.reason);
-  });
+ window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  console.error(
+    "Promise rejection:",
+    r?.name || "",
+    r?.message || "",
+    r
+  );
+});
 
   document.addEventListener("DOMContentLoaded", () => {
     ensureBox();
@@ -1417,10 +1423,22 @@ async function initApp() {
 
     console.log("✅ initApp fertig");
   } catch (e) {
-    console.error("❌ initApp Fehler:", e);
-    out("❌ initApp Fehler: " + (e?.message || e));
+  const name = e?.name || "";
+  const msg = e?.message || String(e);
+
+  // iOS Safari: "The operation was aborted." / AbortError passiert oft beim App-Wechsel
+  if (name === "AbortError" || /aborted/i.test(msg)) {
+    console.error("⚠️ initApp Abort (Safari):", name, msg, e);
+    out("⚠️ Safari hat den Request abgebrochen (passiert oft beim Wechsel Mail↔Safari). Bitte Seite neu laden.");
+    // Wichtig: NICHT crashen -> lokal weiter anzeigen
     if (typeof renderAll === "function") renderAll();
+    return;
   }
+
+  console.error("❌ initApp Fehler:", name, msg, e);
+  out("❌ initApp Fehler: " + msg);
+  if (typeof renderAll === "function") renderAll();
+}
 }
 
 // Auth-Events: wenn Magic Link “ankommt”, neu laden
