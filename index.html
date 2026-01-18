@@ -833,10 +833,12 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   alert("BOOT: JS läuft");
-</script>    <script>
+</script>    
+    
 /* =========================================================
    0) iPad Debug Console (robust)
    ========================================================= */
+<script>
 (function () {
   let box = null;
   const buffer = [];
@@ -854,8 +856,7 @@
       border: 1px solid rgba(255,255,255,.2);
       border-radius: 14px; padding: 10px; font: 12px/1.4 -apple-system,system-ui;
       white-space: pre-wrap;
-      pointer-events: none;
-      `;
+    `;
     box.textContent = "🧪 Debug-Console aktiv\n";
     document.body.appendChild(box);
 
@@ -865,24 +866,15 @@
   }
 
   function write(prefix, args) {
-    const msg = Array.from(args)
-      .map((a) => {
-        try {
-          return typeof a === "string" ? a : JSON.stringify(a);
-        } catch {
-          return String(a);
-        }
-      })
-      .join(" ");
+    const msg = Array.from(args).map((a) => {
+      try { return typeof a === "string" ? a : JSON.stringify(a); }
+      catch { return String(a); }
+    }).join(" ");
     const line = `${prefix} ${msg}`;
 
     const b = ensureBox();
-    if (b) {
-      b.textContent += line + "\n";
-      b.scrollTop = b.scrollHeight;
-    } else {
-      buffer.push(line);
-    }
+    if (b) { b.textContent += line + "\n"; b.scrollTop = b.scrollHeight; }
+    else buffer.push(line);
   }
 
   const origLog = console.log.bind(console);
@@ -894,24 +886,20 @@
   window.addEventListener("error", (e) => {
     console.error("Uncaught:", e.message, "at", e.filename + ":" + e.lineno);
   });
- window.addEventListener("unhandledrejection", (e) => {
-  const r = e.reason;
-  console.error(
-    "Promise rejection:",
-    r?.name || "",
-    r?.message || "",
-    r
-  );
-});
+  window.addEventListener("unhandledrejection", (e) => {
+    console.error("Promise rejection:", e.reason);
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
     ensureBox();
     console.log("DOMContentLoaded ✅");
   });
+
+  // sofort loggen
+  console.log("DEBUG SCRIPT LOADED ✅");
 })();
-
-console.log("SCRIPT START");
-
+</script>
+    <script>
 /* =========================================================
    1) Supabase Setup
    ========================================================= */
