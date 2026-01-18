@@ -931,8 +931,32 @@ const supabaseClient =
         },
       })
     : null;
+function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutMs = 12000; // 12s - kannst du später anpassen
 
+  const id = setTimeout(() => controller.abort(), timeoutMs);
 
+  return fetch(url, {
+    ...options,
+    signal: controller.signal,
+  }).finally(() => clearTimeout(id));
+}
+
+const supabaseClient =
+  sbLib && typeof sbLib.createClient === "function"
+    ? sbLib.createClient(SUPABASE_URL.replace(/\/$/, ""), SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          storage: window.localStorage,
+        },
+        global: {
+          fetch: fetchWithTimeout, // 👈 DAS ist der Safari-Fix
+        },
+      })
+    : null;
 /* =========================================================
    1a) Current User Helper (RLS-Fix)
    ========================================================= */
@@ -1120,15 +1144,24 @@ function saveNotesToLocal(map) {
 async function sbFetchPayloads(table) {
   if (!supabaseClient) throw new Error("supabaseClient ist null");
 
-  const { data, error } = await supabaseClient
-    .from(table)
-    .select("payload, ts")
-    .order("ts", { ascending: false });
+  console.log(`⬇️ [${table}] select start…`);
 
-  if (error) throw error;
+  try {
+    const { data, error } = await supabaseClient
+      .from(table)
+      .select("payload, ts")
+      .order("ts", { ascending: false });
 
-  // extra safety (falls du irgendwann mehrere user siehst -> RLS sollte das verhindern)
-  return (data || []).map((r) => r.payload).filter(Boolean);
+    if (error) throw error;
+
+    console.log(`✅ [${table}] select done (${(data || []).length} rows)`);
+    return (data || []).map((r) => r.payload).filter(Boolean);
+  } catch (e) {
+    const name = e?.name || "";
+    const msg = e?.message || String(e);
+    console.error(`❌ [${table}] select error:`, name, msg, e);
+    throw e;
+  }
 }
 
 async function sbReplaceAll(table, payloads, tsGetter) {
@@ -1339,59 +1372,73 @@ async function initFromSupabase() {
   if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
   // --- ENTRIES ---
-  console.log("⬇️ Lade entries von Supabase…");
-  const remoteEntries = await sbFetchPayloads("entries");
   const localEntries = loadEntriesFromLocal();
+  try {
+    console.log("⬇️ Lade entries von Supabase…");
+    const remoteEntries = await sbFetchPayloads("entries");
 
-  if (remoteEntries.length > 0) {
-    saveEntriesToLocal(remoteEntries);
-    console.log("✅ entries loaded from remote:", remoteEntries.length);
-  } else {
-    console.log("ℹ️ remote entries leer -> lokale behalten:", localEntries.length);
-    // optional: wenn lokal was da ist, direkt hochsyncen
-    if (localEntries.length > 0) {
-      console.log("☁️ remote leer, sync lokale entries hoch…");
-      await sbReplaceAll("entries", localEntries, (e) => e?.ts || Date.now());
-      console.log("✅ lokale entries hochgesynct");
+    if (remoteEntries.length > 0) {
+      saveEntriesToLocal(remoteEntries);
+      console.log("✅ entries loaded from remote:", remoteEntries.length);
+    } else {
+      console.log("ℹ️ remote entries leer -> lokale behalten:", localEntries.length);
+      if (localEntries.length > 0) {
+        console.log("☁️ remote leer, sync lokale entries hoch…");
+        await sbReplaceAll("entries", localEntries, (e) => e?.ts || Date.now());
+        console.log("✅ lokale entries hochgesynct");
+      }
     }
+  } catch (e) {
+    console.error("❌ entries init error -> fallback to local:", e);
+    out("⚠️ Entries konnten nicht geladen werden (Safari). Zeige lokale Daten.");
+    // KEIN throw -> App läuft weiter
   }
 
   // --- PLANTS ---
-  console.log("⬇️ Lade plants von Supabase…");
-  const remotePlants = await sbFetchPayloads("plants");
   const localPlants = loadPlantsFromLocal();
+  try {
+    console.log("⬇️ Lade plants von Supabase…");
+    const remotePlants = await sbFetchPayloads("plants");
 
-  if (remotePlants.length > 0) {
-    savePlantsToLocal(remotePlants);
-    console.log("✅ plants loaded from remote:", remotePlants.length);
-  } else {
-    console.log("ℹ️ remote plants leer -> lokale behalten:", localPlants.length);
-    if (localPlants.length > 0) {
-      console.log("☁️ remote leer, sync lokale plants hoch…");
-      await sbReplaceAll("plants", localPlants, () => Date.now());
-      console.log("✅ lokale plants hochgesynct");
+    if (remotePlants.length > 0) {
+      savePlantsToLocal(remotePlants);
+      console.log("✅ plants loaded from remote:", remotePlants.length);
+    } else {
+      console.log("ℹ️ remote plants leer -> lokale behalten:", localPlants.length);
+      if (localPlants.length > 0) {
+        console.log("☁️ remote leer, sync lokale plants hoch…");
+        await sbReplaceAll("plants", localPlants, () => Date.now());
+        console.log("✅ lokale plants hochgesynct");
+      }
     }
+  } catch (e) {
+    console.error("❌ plants init error -> fallback to local:", e);
+    out("⚠️ Plants konnten nicht geladen werden (Safari). Zeige lokale Daten.");
   }
 
   // --- NOTES (map) ---
-  console.log("⬇️ Lade plant_notes von Supabase…");
-  const remoteNotesArr = await sbFetchPayloads("plant_notes");
-  const remoteNotes = remoteNotesArr[0] || null;
   const localNotes = loadNotesFromLocal();
+  try {
+    console.log("⬇️ Lade plant_notes von Supabase…");
+    const remoteNotesArr = await sbFetchPayloads("plant_notes");
+    const remoteNotes = remoteNotesArr[0] || null;
 
-  if (remoteNotes && typeof remoteNotes === "object" && Object.keys(remoteNotes).length) {
-    saveNotesToLocal(remoteNotes);
-    console.log("✅ plant_notes loaded from remote");
-  } else {
-    console.log("ℹ️ remote notes leer -> lokale behalten:", Object.keys(localNotes || {}).length);
-    if (localNotes && Object.keys(localNotes).length) {
-      console.log("☁️ remote leer, sync lokale notes hoch…");
-      await sbReplaceAll("plant_notes", [localNotes], () => Date.now());
-      console.log("✅ lokale notes hochgesynct");
+    if (remoteNotes && typeof remoteNotes === "object" && Object.keys(remoteNotes).length) {
+      saveNotesToLocal(remoteNotes);
+      console.log("✅ plant_notes loaded from remote");
+    } else {
+      console.log("ℹ️ remote notes leer -> lokale behalten:", Object.keys(localNotes || {}).length);
+      if (localNotes && Object.keys(localNotes).length) {
+        console.log("☁️ remote leer, sync lokale notes hoch…");
+        await sbReplaceAll("plant_notes", [localNotes], () => Date.now());
+        console.log("✅ lokale notes hochgesynct");
+      }
     }
+  } catch (e) {
+    console.error("❌ notes init error -> fallback to local:", e);
+    out("⚠️ Notes konnten nicht geladen werden (Safari). Zeige lokale Daten.");
   }
 }
-
 async function initApp() {
   console.log("🚀 initApp gestartet");
   try {
