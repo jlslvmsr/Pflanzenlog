@@ -827,6 +827,10 @@
         <button class="btn-note" onclick="savePlantNote()">Speichern</button>
       </div>
     </dialog>
+    
+    
+    //SCRIPT
+    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
       // ==== iPad Debug Console (robust) ====
@@ -2673,9 +2677,8 @@
           out("✅ Eingeloggt. Lade Daten von Supabase…");
           console.log("✅ Eingeloggt -> lade Supabase Daten…");
 
-          // TODO: in deinem nächsten Schritt:
-          // await initFromSupabase();  // entries + plants + notes
-          // renderAll();
+          await initFromSupabase();
+          renderAll();
 
           renderAll(); // vorerst: zeigt weiterhin local, bis wir initFromSupabase fertig haben
           out("✅ Eingeloggt (Supabase Load kommt als nächstes)");
