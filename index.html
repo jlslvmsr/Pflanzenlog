@@ -831,9 +831,7 @@
   
     
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-  alert("BOOT: JS läuft");
-</script>    
+ 
     <script>
    /* =========================================================
    0) iPad Debug Console (robust)
@@ -1121,16 +1119,28 @@ function saveNotesToLocal(map) {
    - payload (jsonb) -> enthält deine echte Struktur
    Tabellen: entries, plants, plant_notes
    ========================================================= */
+      
+/* =========================================================
+   6a) Supabase Fetch Helper (payload-basierte Tabellen) + Safari Timeout Guard
+   ========================================================= */
 async function sbFetchPayloads(table) {
   if (!supabaseClient) throw new Error("supabaseClient ist null");
 
   console.log(`⬇️ [${table}] select start…`);
 
   try {
-    const { data, error } = await supabaseClient
+    // Query bauen
+    const queryPromise = supabaseClient
       .from(table)
       .select("payload, ts")
       .order("ts", { ascending: false });
+
+    // Safari: kann “stallen” → Timeout erzwingen
+    const { data, error } = await promiseTimeout(
+      queryPromise,
+      12000,
+      `${table}.select`
+    );
 
     if (error) throw error;
 
@@ -1375,6 +1385,25 @@ async function getSessionSafe() {
    - Wenn NICHT eingeloggt: zeigt local (offline/backup)
    - Wenn eingeloggt: lädt 3 Tabellen -> schreibt in local cache -> renderAll()
    ========================================================= */
+function promiseTimeout(promise, ms, label = "operation") {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error(`Timeout after ${ms}ms (${label})`));
+    }, ms);
+
+    promise
+      .then((v) => { clearTimeout(t); resolve(v); })
+      .catch((e) => { clearTimeout(t); reject(e); });
+  });
+} 
+
+async function initFromSupabaseWithTimeout() {
+  // 15s Gesamt-Timeout, damit Safari nicht ewig blockiert
+  return promiseTimeout(initFromSupabase(), 15000, "initFromSupabase");
+}      
+/* =========================================================
+   9a) Init From Supabase (remote -> local cache) mit robustem Safari-Fallback
+   ========================================================= */
 async function initFromSupabase() {
   if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
@@ -1398,7 +1427,7 @@ async function initFromSupabase() {
   } catch (e) {
     console.error("❌ entries init error -> fallback to local:", e);
     out("⚠️ Entries konnten nicht geladen werden (Safari). Zeige lokale Daten.");
-    // KEIN throw -> App läuft weiter
+    // kein throw -> weiter mit plants/notes
   }
 
   // --- PLANTS ---
@@ -1430,7 +1459,12 @@ async function initFromSupabase() {
     const remoteNotesArr = await sbFetchPayloads("plant_notes");
     const remoteNotes = remoteNotesArr[0] || null;
 
-    if (remoteNotes && typeof remoteNotes === "object" && Object.keys(remoteNotes).length) {
+    if (
+      remoteNotes &&
+      typeof remoteNotes === "object" &&
+      !Array.isArray(remoteNotes) &&
+      Object.keys(remoteNotes).length
+    ) {
       saveNotesToLocal(remoteNotes);
       console.log("✅ plant_notes loaded from remote");
     } else {
