@@ -906,13 +906,14 @@ console.log("SCRIPT START");
 /* =========================================================
    1) Supabase Setup
    ========================================================= */
-const SUPABASE_URL = "https://bwdjojgquyjnydhdyuqw.supabase.co"; // ohne trailing slash
-const SUPABASE_ANON_KEY = "sb_publishable_9duw_kZYTLARlp9wTDDZPQ_SOpPxSNg"; // <-- bleibt publishable/anon key (NICHT secret)
+const SUPABASE_URL = "https://bwdjojgquyjnydhdyuqw.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_9duw_kZYTLARlp9wTDDZPQ_SOpPxSNg";
 
 const sbLib = window.supabase || globalThis.supabase;
 if (!sbLib || typeof sbLib.createClient !== "function") {
   console.error("Supabase SDK nicht geladen (createClient fehlt).");
 }
+
 const supabaseClient =
   sbLib && typeof sbLib.createClient === "function"
     ? sbLib.createClient(SUPABASE_URL.replace(/\/$/, ""), SUPABASE_ANON_KEY, {
@@ -924,6 +925,23 @@ const supabaseClient =
         },
       })
     : null;
+
+
+/* =========================================================
+   1a) Current User Helper (RLS-Fix)
+   ========================================================= */
+let CURRENT_USER_ID = null;
+
+async function getUserId() {
+  if (CURRENT_USER_ID) return CURRENT_USER_ID;
+  if (!supabaseClient) return null;
+
+  const { data, error } = await supabaseClient.auth.getUser();
+  if (error) throw error;
+
+  CURRENT_USER_ID = data?.user?.id || null;
+  return CURRENT_USER_ID;
+}
 
 /* =========================================================
    2) Keys (Local Cache)
@@ -1110,29 +1128,43 @@ async function sbFetchPayloads(table) {
 async function sbReplaceAll(table, payloads, tsGetter) {
   if (!supabaseClient) throw new Error("supabaseClient ist null");
 
-  // ALLES für diesen User löschen (RLS sorgt dafür, dass nur "deine" Rows betroffen sind)
-    const { error: delErr } = await supabaseClient
+  const userId = await getUserId();
+  if (!userId) throw new Error("Kein User eingeloggt (user_id fehlt)");
+
+  console.log(`☁️ [${table}] replaceAll für user`, userId);
+
+  // 1️⃣ Alle bestehenden Rows dieses Users löschen
+  const { error: delErr } = await supabaseClient
     .from(table)
     .delete()
-    .gt("ts", 0);
+    .eq("user_id", userId);
 
   if (delErr) throw delErr;
-  // Trick: delete ohne Filter geht in supabase-js nicht immer sauber; mit RLS + einem always-true Filter klappt’s.
-  // Falls du "id" nicht hast: dann nimm .gt("ts", 0) oder ähnliches.
 
+  // 2️⃣ Neue Rows vorbereiten (MIT user_id!)
   const rows = (payloads || []).map((p) => ({
+    user_id: userId,
+    ts:
+      typeof tsGetter === "function"
+        ? tsGetter(p) || Date.now()
+        : Date.now(),
     payload: p,
-    ts: typeof tsGetter === "function" ? (tsGetter(p) || Date.now()) : Date.now(),
   }));
 
-  if (!rows.length) return;
+  if (!rows.length) {
+    console.log(`ℹ️ [${table}] nichts zu speichern`);
+    return;
+  }
 
+  // 3️⃣ Chunked Insert (sicher & stabil)
   const CHUNK = 200;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const slice = rows.slice(i, i + CHUNK);
     const { error } = await supabaseClient.from(table).insert(slice);
     if (error) throw error;
   }
+
+  console.log(`✅ [${table}] Sync abgeschlossen (${rows.length} rows)`);
 }
 
 /* =========================================================
@@ -1257,11 +1289,18 @@ async function sendMagicLink() {
 async function logout() {
   try {
     if (!supabaseClient) throw new Error("supabaseClient fehlt");
+
     await supabaseClient.auth.signOut();
+
+    // 🔑 WICHTIG: User-ID Cache zurücksetzen
+    CURRENT_USER_ID = null;
+
     out("👋 Ausgeloggt.");
     console.log("👋 ausgeloggt");
+
     updateAuthUI(null);
-    // optional: local cache weiter anzeigen
+
+    // App bleibt nutzbar mit lokalen Daten
     if (typeof renderAll === "function") renderAll();
   } catch (e) {
     console.error("❌ Logout Fehler:", e);
