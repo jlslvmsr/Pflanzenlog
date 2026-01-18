@@ -828,429 +828,452 @@
       </div>
     </dialog>
     
+  
     
-    //SCRIPT
-    
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script>
-      // ==== iPad Debug Console (robust) ====
-      (function () {
-        let box = null;
-        const buffer = [];
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* =========================================================
+   0) iPad Debug Console (robust)
+   ========================================================= */
+(function () {
+  let box = null;
+  const buffer = [];
 
-        function ensureBox() {
-          if (box) return box;
-          if (!document.body) return null;
+  function ensureBox() {
+    if (box) return box;
+    if (!document.body) return null;
 
-          box = document.createElement("div");
-          box.id = "debugConsole";
-          box.style.cssText = `
-            position: fixed; left: 10px; right: 10px; bottom: 10px;
-            max-height: 40vh; overflow: auto; z-index: 999999;
-            background: rgba(0,0,0,.78); color: #fff;
-            border: 1px solid rgba(255,255,255,.2);
-            border-radius: 14px; padding: 10px; font: 12px/1.4 -apple-system,system-ui;
-            white-space: pre-wrap;
-          `;
-          box.textContent = "🧪 Debug-Console aktiv\n";
-          document.body.appendChild(box);
+    box = document.createElement("div");
+    box.id = "debugConsole";
+    box.style.cssText = `
+      position: fixed; left: 10px; right: 10px; bottom: 10px;
+      max-height: 40vh; overflow: auto; z-index: 999999;
+      background: rgba(0,0,0,.78); color: #fff;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 14px; padding: 10px; font: 12px/1.4 -apple-system,system-ui;
+      white-space: pre-wrap;
+    `;
+    box.textContent = "🧪 Debug-Console aktiv\n";
+    document.body.appendChild(box);
 
-          buffer.splice(0).forEach((line) => {
-            box.textContent += line + "\n";
-          });
-          box.scrollTop = box.scrollHeight;
-          return box;
-        }
+    buffer.splice(0).forEach((line) => (box.textContent += line + "\n"));
+    box.scrollTop = box.scrollHeight;
+    return box;
+  }
 
-        function write(prefix, args) {
-          const msg = Array.from(args)
-            .map((a) => {
-              try {
-                return typeof a === "string" ? a : JSON.stringify(a);
-              } catch {
-                return String(a);
-              }
-            })
-            .join(" ");
-          const line = `${prefix} ${msg}`;
-          const b = ensureBox();
-          if (b) {
-            b.textContent += line + "\n";
-            b.scrollTop = b.scrollHeight;
-          } else {
-            buffer.push(line);
-          }
-        }
-
-        const origLog = console.log.bind(console);
-        const origErr = console.error.bind(console);
-
-        console.log = (...args) => {
-          origLog(...args);
-          write("LOG:", args);
-        };
-        console.error = (...args) => {
-          origErr(...args);
-          write("ERR:", args);
-        };
-
-        window.addEventListener("error", (e) => {
-          console.error(
-            "Uncaught:",
-            e.message,
-            "at",
-            e.filename + ":" + e.lineno
-          );
-        });
-        window.addEventListener("unhandledrejection", (e) => {
-          console.error("Promise rejection:", e.reason);
-        });
-
-        document.addEventListener("DOMContentLoaded", () => {
-          ensureBox();
-          console.log("DOMContentLoaded ✅");
-        });
-      })();
-
-      console.log("SCRIPT START");
-
-      // ==========================
-      // SUPABASE SETUP
-      // ==========================
-      const SUPABASE_URL = "https://bwdjojgquyjnydhdyuqw.supabase.co"; // ohne trailing slash
-      const SUPABASE_ANON_KEY =
-        "sb_publishable_9duw_kZYTLARlp9wTDDZPQ_SOpPxSNg";
-
-      const sbLib = window.supabase || globalThis.supabase;
-      if (!sbLib || typeof sbLib.createClient !== "function") {
-        console.error("Supabase SDK nicht geladen (createClient fehlt).");
-      }
-
-      const supabaseClient =
-        sbLib && typeof sbLib.createClient === "function"
-          ? sbLib.createClient(
-              SUPABASE_URL.replace(/\/$/, ""),
-              SUPABASE_ANON_KEY
-            )
-          : null;
-
-      // ==========================
-      // KEYS
-      // ==========================
-      const DEVICE_KEY = "pflanzenlog_device_id_v1";
-
-      const STORAGE_KEY = "pflanzenlog_entries_v12";
-      const PLANTS_KEY = "pflanzenlog_plants_v3_rooms_active";
-      const PLANT_NOTES_KEY = "pflanzenlog_plant_notes_v1";
-
-      // ==========================
-      // DEVICE ID
-      // ==========================
-      function getDeviceId() {
-        let id = localStorage.getItem(DEVICE_KEY);
-        if (!id) {
-          id = crypto?.randomUUID
-            ? crypto.randomUUID()
-            : String(Date.now()) + "_" + Math.random().toString(16).slice(2);
-          localStorage.setItem(DEVICE_KEY, id);
-        }
-        return id;
-      }
-      const DEVICE_ID = getDeviceId();
-
-      // ==========================
-      // ROOMS
-      // ==========================
-      const ROOMS_BASE = ["Wohnzimmer", "Schlafzimmer", "Flur", "Büro"];
-      const REMOVED_ROOM = "Entfernte Pflanzen";
-      const ROOMS_ALL = [...ROOMS_BASE, REMOVED_ROOM];
-
-      // ==========================
-      // STATE
-      // ==========================
-      const state = {
-        viewMonth: new Date(),
-        selectedISO: isoDate(new Date()),
-      };
-
-      let pendingPlantToDelete = null;
-      let pendingRoomPlant = null;
-      let pendingPlantForNote = null;
-
-      let pendingAction = null;
-      let popupISO = null;
-
-      // Action date (for backdating)
-      let actionISO = isoDate(new Date());
-      let actionDateLocked = false;
-
-      // ==========================
-      // HELPERS
-      // ==========================
-      function isoDate(d) {
-        const x = new Date(d);
-        const y = x.getFullYear();
-        const m = String(x.getMonth() + 1).padStart(2, "0");
-        const day = String(x.getDate()).padStart(2, "0");
-        return `${y}-${m}-${day}`;
-      }
-
-      function isoToNoonTs(iso) {
-        const [y, m, d] = iso.split("-").map(Number);
-        return new Date(y, m - 1, d, 12, 0, 0).getTime();
-      }
-
-      const uniq = (arr) => Array.from(new Set((arr || []).filter(Boolean)));
-      const setUnion = (a, b) => uniq([...(a || []), ...(b || [])]);
-
-      function escapeHtml(str) {
-        return String(str)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#039;");
-      }
-
-      function uuid() {
-        const now = Date.now();
-        return crypto?.randomUUID
-          ? crypto.randomUUID()
-          : String(now) + "_" + Math.random().toString(16).slice(2);
-      }
-
-      function openDialog(id) {
-        const dlg = document.getElementById(id);
-        if (!dlg) return;
-        if (dlg.showModal) dlg.showModal();
-        else dlg.setAttribute("open", "");
-      }
-
-      function closeDialog(id) {
-        const dlg = document.getElementById(id);
-        if (!dlg) return;
-        if (dlg.close) dlg.close();
-        else dlg.removeAttribute("open");
-      }
-
-      function out(msg) {
-        const el = document.getElementById("output");
-        if (el) el.textContent = msg || "";
-      }
-
-      // ==========================
-      // LOCAL CACHE (entries/plants/notes)
-      // ==========================
-      function loadEntriesFromLocal() {
+  function write(prefix, args) {
+    const msg = Array.from(args)
+      .map((a) => {
         try {
-          return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+          return typeof a === "string" ? a : JSON.stringify(a);
         } catch {
-          return [];
+          return String(a);
         }
-      }
-      function saveEntriesToLocal(entries) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(entries || []));
-      }
+      })
+      .join(" ");
+    const line = `${prefix} ${msg}`;
 
-      function loadPlantsFromLocal() {
-        try {
-          return JSON.parse(localStorage.getItem(PLANTS_KEY)) || [];
-        } catch {
-          return [];
-        }
-      }
-      function savePlantsToLocal(plants) {
-        localStorage.setItem(PLANTS_KEY, JSON.stringify(plants || []));
-      }
+    const b = ensureBox();
+    if (b) {
+      b.textContent += line + "\n";
+      b.scrollTop = b.scrollHeight;
+    } else {
+      buffer.push(line);
+    }
+  }
 
-      function loadNotesFromLocal() {
-        try {
-          return JSON.parse(localStorage.getItem(PLANT_NOTES_KEY)) || {};
-        } catch {
-          return {};
-        }
-      }
-      function saveNotesToLocal(map) {
-        localStorage.setItem(PLANT_NOTES_KEY, JSON.stringify(map || {}));
-      }
+  const origLog = console.log.bind(console);
+  const origErr = console.error.bind(console);
 
-      // ==========================
-      // SUPABASE HELPERS (generic replaceAll per table)
-      // ==========================
-      async function sbFetchPayloads(table) {
+  console.log = (...args) => { origLog(...args); write("LOG:", args); };
+  console.error = (...args) => { origErr(...args); write("ERR:", args); };
+
+  window.addEventListener("error", (e) => {
+    console.error("Uncaught:", e.message, "at", e.filename + ":" + e.lineno);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    console.error("Promise rejection:", e.reason);
+  });
+
+  document.addEventListener("DOMContentLoaded", () => {
+    ensureBox();
+    console.log("DOMContentLoaded ✅");
+  });
+})();
+
+console.log("SCRIPT START");
+
+/* =========================================================
+   1) Supabase Setup
+   ========================================================= */
+const SUPABASE_URL = "https://bwdjojgquyjnydhdyuqw.supabase.co"; // ohne trailing slash
+const SUPABASE_ANON_KEY = "sb_publishable_9duw_kZYTLARlp9wTDDZPQ_SOpPxSNg"; // <-- bleibt publishable/anon key (NICHT secret)
+
+const sbLib = window.supabase || globalThis.supabase;
+if (!sbLib || typeof sbLib.createClient !== "function") {
+  console.error("Supabase SDK nicht geladen (createClient fehlt).");
+}
+const supabaseClient =
+  sbLib && typeof sbLib.createClient === "function"
+    ? sbLib.createClient(SUPABASE_URL.replace(/\/$/, ""), SUPABASE_ANON_KEY)
+    : null;
+
+/* =========================================================
+   2) Keys (Local Cache)
+   ========================================================= */
+const STORAGE_KEY = "pflanzenlog_entries_v12";
+const PLANTS_KEY = "pflanzenlog_plants_v3_rooms_active";
+const PLANT_NOTES_KEY = "pflanzenlog_plant_notes_v1";
+
+/* =========================================================
+   3) Rooms / State (nur Grundgerüst; dein bestehender Code nutzt das)
+   ========================================================= */
+const ROOMS_BASE = ["Wohnzimmer", "Schlafzimmer", "Flur", "Büro"];
+const REMOVED_ROOM = "Entfernte Pflanzen";
+const ROOMS_ALL = [...ROOMS_BASE, REMOVED_ROOM];
+
+const state = {
+  viewMonth: new Date(),
+  selectedISO: isoDate(new Date()),
+};
+
+let pendingAction = null;
+let popupISO = null;
+let actionISO = isoDate(new Date());
+let actionDateLocked = false;
+
+/* =========================================================
+   4) Helpers (nur Basics, die der obere Teil braucht)
+   ========================================================= */
+function isoDate(d) {
+  const x = new Date(d);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, "0");
+  const day = String(x.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function out(msg) {
+  const el = document.getElementById("output");
+  if (el) el.textContent = msg || "";
+}
+
+/* =========================================================
+   5) Local Cache (Entries / Plants / Notes)
+   ========================================================= */
+function loadEntriesFromLocal() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch { return []; }
+}
+function saveEntriesToLocal(entries) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries || []));
+}
+
+function loadPlantsFromLocal() {
+  try { return JSON.parse(localStorage.getItem(PLANTS_KEY)) || []; }
+  catch { return []; }
+}
+function savePlantsToLocal(plants) {
+  localStorage.setItem(PLANTS_KEY, JSON.stringify(plants || []));
+}
+
+function loadNotesFromLocal() {
+  try { return JSON.parse(localStorage.getItem(PLANT_NOTES_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveNotesToLocal(map) {
+  localStorage.setItem(PLANT_NOTES_KEY, JSON.stringify(map || {}));
+}
+
+/* =========================================================
+   6) Supabase Helpers (payload-basierte Tabellen)
+   WICHTIG: Diese Implementierung erwartet in Supabase je Tabelle:
+   - user_id (uuid)  -> RLS: user_id = auth.uid()
+   - ts (bigint)     -> sortierbar
+   - payload (jsonb) -> enthält deine echte Struktur
+   Tabellen: entries, plants, plant_notes
+   ========================================================= */
+async function sbFetchPayloads(table) {
   if (!supabaseClient) throw new Error("supabaseClient ist null");
 
   const { data, error } = await supabaseClient
     .from(table)
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(5000);
+    .select("payload, ts")
+    .order("ts", { ascending: false });
 
   if (error) throw error;
-  return data || [];
+
+  // extra safety (falls du irgendwann mehrere user siehst -> RLS sollte das verhindern)
+  return (data || []).map((r) => r.payload).filter(Boolean);
 }
 
-      async function sbReplaceAll(table, payloads, tsGetter) {
-        if (!supabaseClient) throw new Error("supabaseClient ist null");
+async function sbReplaceAll(table, payloads, tsGetter) {
+  if (!supabaseClient) throw new Error("supabaseClient ist null");
 
-        const { error: delErr } = await supabaseClient
-          .from(table)
-          .delete()
-          .eq("device_id", DEVICE_ID);
+  // ALLES für diesen User löschen (RLS sorgt dafür, dass nur "deine" Rows betroffen sind)
+    const { error: delErr } = await supabaseClient
+    .from(table)
+    .delete()
+    .gt("ts", 0);
 
-        if (delErr) throw delErr;
+  if (delErr) throw delErr;
+  // Trick: delete ohne Filter geht in supabase-js nicht immer sauber; mit RLS + einem always-true Filter klappt’s.
+  // Falls du "id" nicht hast: dann nimm .gt("ts", 0) oder ähnliches.
 
-        const rows = (payloads || []).map((p) => ({
-          device_id: DEVICE_ID,
-          ts: typeof tsGetter === "function" ? tsGetter(p) : Date.now(),
-          payload: p,
-        }));
+  const rows = (payloads || []).map((p) => ({
+    payload: p,
+    ts: typeof tsGetter === "function" ? (tsGetter(p) || Date.now()) : Date.now(),
+  }));
 
-        if (!rows.length) return;
+  if (!rows.length) return;
 
-        const CHUNK = 200;
-        for (let i = 0; i < rows.length; i += CHUNK) {
-          const slice = rows.slice(i, i + CHUNK);
-          const { error } = await supabaseClient.from(table).insert(slice);
-          if (error) throw error;
-        }
+  const CHUNK = 200;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK);
+    const { error } = await supabaseClient.from(table).insert(slice);
+    if (error) throw error;
+  }
+}
+
+/* =========================================================
+   7) Public Data API (der REST deiner App nutzt NUR diese 6 Funktionen)
+   ========================================================= */
+// ---- entries
+function loadEntries() {
+  return loadEntriesFromLocal();
+}
+let syncTimerEntries = null;
+function saveEntries(entries) {
+  saveEntriesToLocal(entries);
+  scheduleEntriesSync(entries);
+}
+function scheduleEntriesSync(entries) {
+  if (syncTimerEntries) clearTimeout(syncTimerEntries);
+  syncTimerEntries = setTimeout(async () => {
+    try {
+      console.log("☁️ Sync entries…");
+      out("☁️ Sync entries…");
+      await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
+      console.log("✅ entries synced");
+      out("✅ Supabase Sync ok");
+    } catch (e) {
+      console.error("❌ entries sync error:", e.message, e);
+      out("❌ Supabase Sync Fehler: " + e.message);
+    }
+  }, 600);
+}
+
+// ---- plants
+function loadPlants() {
+  const local = loadPlantsFromLocal();
+  return Array.isArray(local) ? local : [];
+}
+let syncTimerPlants = null;
+function savePlants(plants) {
+  savePlantsToLocal(plants || []);
+  schedulePlantsSync(plants || []);
+}
+function schedulePlantsSync(plants) {
+  if (syncTimerPlants) clearTimeout(syncTimerPlants);
+  syncTimerPlants = setTimeout(async () => {
+    try {
+      console.log("☁️ Sync plants…");
+      out("☁️ Sync plants…");
+      await sbReplaceAll("plants", plants, () => Date.now());
+      console.log("✅ plants synced");
+      out("✅ Supabase Sync ok");
+    } catch (e) {
+      console.error("❌ plants sync error:", e.message, e);
+      out("❌ Supabase Sync Fehler: " + e.message);
+    }
+  }, 600);
+}
+
+// ---- plant_notes
+function loadPlantNotes() {
+  return loadNotesFromLocal();
+}
+let syncTimerNotes = null;
+function savePlantNotes(map) {
+  saveNotesToLocal(map || {});
+  scheduleNotesSync(map || {});
+}
+function scheduleNotesSync(map) {
+  if (syncTimerNotes) clearTimeout(syncTimerNotes);
+  syncTimerNotes = setTimeout(async () => {
+    try {
+      console.log("☁️ Sync plant_notes…");
+      out("☁️ Sync plant notes…");
+      await sbReplaceAll("plant_notes", [map], () => Date.now());
+      console.log("✅ plant_notes synced");
+      out("✅ Supabase Sync ok");
+    } catch (e) {
+      console.error("❌ plant_notes sync error:", e.message, e);
+      out("❌ Supabase Sync Fehler: " + e.message);
+    }
+  }, 600);
+}
+
+/* =========================================================
+   8) Auth (Magic Link) + UI Hooks
+   Erwartete HTML-Elemente:
+   - <input id="emailInput" ...>
+   - <span id="authStatus"></span>
+   - Button onclick="sendMagicLink()" / onclick="logout()"
+   ========================================================= */
+function updateAuthUI(session) {
+  const status = document.getElementById("authStatus");
+  if (!status) return;
+  status.textContent = session?.user
+    ? `Eingeloggt: ${session.user.email || session.user.id}`
+    : "Nicht eingeloggt";
+}
+
+async function sendMagicLink() {
+  try {
+    if (!supabaseClient) throw new Error("supabaseClient fehlt");
+    const email = (document.getElementById("emailInput")?.value || "").trim();
+    if (!email) return out("Bitte Email eingeben 🙂");
+
+    out("📨 Magic Link wird gesendet…");
+    console.log("📨 sende Magic Link an", email);
+
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: window.location.href.split("#")[0],
+      },
+    });
+    if (error) throw error;
+
+    out("✅ Link gesendet! Check deine Mail 😊");
+    console.log("✅ Magic Link gesendet");
+  } catch (e) {
+    console.error("❌ Magic Link Fehler:", e);
+    out("❌ Magic Link Fehler: " + (e?.message || e));
+  }
+}
+
+async function logout() {
+  try {
+    if (!supabaseClient) throw new Error("supabaseClient fehlt");
+    await supabaseClient.auth.signOut();
+    out("👋 Ausgeloggt.");
+    console.log("👋 ausgeloggt");
+    updateAuthUI(null);
+    // optional: local cache weiter anzeigen
+    if (typeof renderAll === "function") renderAll();
+  } catch (e) {
+    console.error("❌ Logout Fehler:", e);
+    out("❌ Logout Fehler: " + (e?.message || e));
+  }
+}
+
+async function getSessionSafe() {
+  if (!supabaseClient) throw new Error("supabaseClient fehlt");
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) throw error;
+  return data.session;
+}
+
+/* =========================================================
+   9) Init (remote -> cache -> render)
+   - Wenn NICHT eingeloggt: zeigt local (offline/backup)
+   - Wenn eingeloggt: lädt 3 Tabellen -> schreibt in local cache -> renderAll()
+   ========================================================= */
+async function initFromSupabase() {
+  if (!supabaseClient) throw new Error("supabaseClient fehlt");
+
+  console.log("⬇️ Lade entries von Supabase…");
+  const remoteEntries = await sbFetchPayloads("entries");
+  saveEntriesToLocal(remoteEntries);
+  console.log("✅ entries loaded:", remoteEntries.length);
+
+  console.log("⬇️ Lade plants von Supabase…");
+  const remotePlants = await sbFetchPayloads("plants");
+  if (remotePlants.length) savePlantsToLocal(remotePlants);
+  console.log("✅ plants loaded:", remotePlants.length);
+
+  console.log("⬇️ Lade plant_notes von Supabase…");
+  const remoteNotesArr = await sbFetchPayloads("plant_notes");
+  const remoteNotes = remoteNotesArr[0] || {};
+  if (remoteNotes && typeof remoteNotes === "object") saveNotesToLocal(remoteNotes);
+  console.log("✅ plant_notes loaded");
+}
+
+async function initApp() {
+  console.log("🚀 initApp gestartet");
+  try {
+    if (!supabaseClient) {
+      out("❌ Supabase SDK fehlt");
+      console.error("supabaseClient ist null");
+      if (typeof renderAll === "function") renderAll();
+      return;
+    }
+
+    const session = await getSessionSafe();
+    updateAuthUI(session);
+
+    if (!session) {
+      console.log("🔒 Kein Login -> local Cache");
+      out("🔒 Bitte einloggen (Magic Link), um iPhone/iPad Sync zu nutzen.");
+      if (typeof renderAll === "function") renderAll();
+      console.log("✅ initApp fertig (local)");
+      return;
+    }
+
+    out("✅ Eingeloggt. Lade Daten von Supabase…");
+    console.log("✅ Eingeloggt -> lade Supabase Daten…");
+
+    await initFromSupabase();
+
+    out("✅ Supabase geladen");
+    if (typeof renderAll === "function") renderAll();
+
+    console.log("✅ initApp fertig");
+  } catch (e) {
+    console.error("❌ initApp Fehler:", e);
+    out("❌ initApp Fehler: " + (e?.message || e));
+    if (typeof renderAll === "function") renderAll();
+  }
+}
+
+// Auth-Events: wenn Magic Link “ankommt”, neu laden
+if (supabaseClient) {
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    console.log("🔔 Auth event:", event);
+    updateAuthUI(session);
+
+    if (event === "SIGNED_IN") {
+      try {
+        out("✅ Login erkannt. Lade Daten…");
+        await initFromSupabase();
+        if (typeof renderAll === "function") renderAll();
+        out("✅ Sync bereit (iPhone/iPad)");
+      } catch (e) {
+        console.error("❌ After-login load error:", e);
+        out("❌ Load Fehler nach Login: " + (e?.message || e));
       }
+    }
 
-      // ==========================
-      // PUBLIC DATA API (REST DER APP NUTZT NUR DAS)
-      // Supabase = Source of Truth
-      // localStorage = Cache/Fallback
-      // ==========================
+    if (event === "SIGNED_OUT") {
+      out("👋 Ausgeloggt. Zeige lokale Daten.");
+      if (typeof renderAll === "function") renderAll();
+    }
+  });
+}
 
-      // ---- entries
-      function loadEntries() {
-        return loadEntriesFromLocal();
-      }
+// Start
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initApp);
+} else {
+  initApp();
+}
 
-      let syncTimerEntries = null;
-      function saveEntries(entries) {
-        saveEntriesToLocal(entries);
-        scheduleEntriesSync(entries);
-      }
-      function scheduleEntriesSync(entries) {
-        if (syncTimerEntries) clearTimeout(syncTimerEntries);
-        syncTimerEntries = setTimeout(async () => {
-          try {
-            console.log("☁️ Sync entries…");
-            out("☁️ Sync entries…");
-            await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
-            console.log("✅ entries synced");
-            out("✅ Supabase Sync ok");
-          } catch (e) {
-            console.error("❌ entries sync error:", e.message, e);
-            out("❌ Supabase Sync Fehler: " + e.message);
-          }
-        }, 600);
-      }
+// Exports für onclick im HTML
+window.sendMagicLink = sendMagicLink;
+window.logout = logout;
 
-      // ---- plants
-      function loadPlants() {
-        const local = loadPlantsFromLocal();
-        if (Array.isArray(local) && local.length)
-          return local.map(normalizePlant).filter(Boolean);
-        // wenn leer: defaults setzen
-        const defaults = [
-          { name: "Monstera", room: "Wohnzimmer", active: true },
-          { name: "Orchidee", room: "Schlafzimmer", active: true },
-          { name: "Calathea", room: "Büro", active: true },
-          { name: "Pothos", room: "Flur", active: true },
-        ]
-          .map(normalizePlant)
-          .filter(Boolean);
-        savePlantsToLocal(defaults);
-        return defaults;
-      }
-
-      let syncTimerPlants = null;
-      function savePlants(plants) {
-        const cleaned = (plants || []).map(normalizePlant).filter(Boolean);
-        savePlantsToLocal(cleaned);
-        schedulePlantsSync(cleaned);
-      }
-      function schedulePlantsSync(plants) {
-        if (syncTimerPlants) clearTimeout(syncTimerPlants);
-        syncTimerPlants = setTimeout(async () => {
-          try {
-            console.log("☁️ Sync plants…");
-            out("☁️ Sync plants…");
-            await sbReplaceAll("plants", plants, () => Date.now());
-            console.log("✅ plants synced");
-            out("✅ Supabase Sync ok");
-          } catch (e) {
-            console.error("❌ plants sync error:", e.message, e);
-            out("❌ Supabase Sync Fehler: " + e.message);
-          }
-        }, 600);
-      }
-
-      // ---- plantNotes
-      function loadPlantNotes() {
-        return loadNotesFromLocal();
-      }
-
-      let syncTimerNotes = null;
-      function savePlantNotes(map) {
-        saveNotesToLocal(map || {});
-        scheduleNotesSync(map || {});
-      }
-      function scheduleNotesSync(map) {
-        if (syncTimerNotes) clearTimeout(syncTimerNotes);
-        syncTimerNotes = setTimeout(async () => {
-          try {
-            console.log("☁️ Sync plant_notes…");
-            out("☁️ Sync plant notes…");
-            await sbReplaceAll("plant_notes", [map], () => Date.now());
-            console.log("✅ plant_notes synced");
-            out("✅ Supabase Sync ok");
-          } catch (e) {
-            console.error("❌ plant_notes sync error:", e.message, e);
-            out("❌ Supabase Sync Fehler: " + e.message);
-          }
-        }, 600);
-      }
-
-      // ==========================
-      // INIT: remote -> cache -> render
-      // ==========================
-      async function initFromSupabase() {
-        if (!supabaseClient) {
-          out("❌ Supabase SDK fehlt");
-          return;
-        }
-
-        try {
-          console.log("⬇️ Lade entries von Supabase…");
-          const remoteEntries = await sbFetchPayloads("entries");
-          saveEntriesToLocal(remoteEntries);
-          console.log("✅ entries loaded:", remoteEntries.length);
-
-          console.log("⬇️ Lade plants von Supabase…");
-          const remotePlants = await sbFetchPayloads("plants");
-          if (remotePlants.length) savePlantsToLocal(remotePlants);
-          console.log("✅ plants loaded:", remotePlants.length);
-
-          console.log("⬇️ Lade plant_notes von Supabase…");
-          const remoteNotesArr = await sbFetchPayloads("plant_notes");
-          const remoteNotes = remoteNotesArr[0] || {};
-          if (remoteNotes && typeof remoteNotes === "object")
-            saveNotesToLocal(remoteNotes);
-          console.log("✅ plant_notes loaded");
-
-          out("✅ Supabase geladen");
-        } catch (e) {
-          console.error(
-            "⚠️ Supabase load error (fallback local):",
-            e.message,
-            e
-          );
-          out("⚠️ Supabase nicht erreichbar – nutze local Cache");
-        }
-      }
 
       // ==========================
       // NORMALIZE PLANT + GETTERS
@@ -2521,10 +2544,99 @@
           fillCommentPlants("dayPopupCommentPlant", true);
         } catch {}
       }
+      // ==========================
+      // Import/export Localfiles"
+      // ==========================
 
+function exportLocalData() {
+  try {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      keys: {
+        entries: STORAGE_KEY,
+        plants: PLANTS_KEY,
+        notes: PLANT_NOTES_KEY,
+      },
+      data: {
+        entries: loadEntriesFromLocal(),
+        plants: loadPlantsFromLocal(),
+        notes: loadNotesFromLocal(),
+      },
+    };
+
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pflanzenlog-backup-${isoDate(new Date())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+    out("✅ Backup exportiert.");
+  } catch (e) {
+    console.error("❌ exportLocalData Fehler:", e);
+    out("❌ Export fehlgeschlagen: " + (e?.message || e));
+  }
+}
+
+async function importLocalData(file) {
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const payload = JSON.parse(text);
+
+    // Akzeptiere sowohl dein strukturiertes Backup (payload.data.*)
+    // als auch "raw" Formate, falls du mal nur arrays/objekte exportierst.
+    const entries = payload?.data?.entries ?? payload?.entries ?? [];
+    const plants  = payload?.data?.plants  ?? payload?.plants  ?? [];
+    const notes   = payload?.data?.notes   ?? payload?.notes   ?? {};
+
+    if (!Array.isArray(entries)) throw new Error("Import: entries ist kein Array");
+    if (!Array.isArray(plants)) throw new Error("Import: plants ist kein Array");
+    if (typeof notes !== "object" || notes === null || Array.isArray(notes)) {
+      throw new Error("Import: notes ist kein Objekt");
+    }
+
+    // 1) Lokal speichern
+    saveEntriesToLocal(entries);
+    savePlantsToLocal(plants);
+    saveNotesToLocal(notes);
+
+    out(`✅ Import ok: ${entries.length} Einträge, ${plants.length} Pflanzen.`);
+    console.log("✅ Import ok", { entries: entries.length, plants: plants.length });
+
+    // 2) UI aktualisieren
+    if (typeof renderAll === "function") renderAll();
+
+    // 3) OPTIONAL: direkt zu Supabase syncen, wenn eingeloggt
+    if (supabaseClient) {
+      const session = await getSessionSafe().catch(() => null);
+      if (session) {
+        out("☁️ Import erkannt – sync zu Supabase…");
+        // Wichtig: saveX triggert deine Debounce-Sync-Strategie
+        savePlants(plants);
+        savePlantNotes(notes);
+        saveEntries(entries);
+        out("✅ Import + Sync angestoßen (Supabase).");
+      } else {
+        out("ℹ️ Import ok. Für Supabase Sync bitte einloggen.");
+      }
+    }
+  } catch (e) {
+    console.error("❌ importLocalData Fehler:", e);
+    out("❌ Import fehlgeschlagen: " + (e?.message || e));
+  }
+}  
       // ==========================
       // EXPORT FOR inline onclick=""
       // ==========================
+ 
       window.openAction = openAction;
       window.openActionWithDate = openActionWithDate;
       window.openActionForSelectedDay = openActionForSelectedDay;
@@ -2583,133 +2695,8 @@
       window.clearPlantNote = clearPlantNote;
 
       window.clearAll = clearAll;
-
-      // ==========================
-      // AUTH (Magic Link) + INIT
-      // ==========================
-
-      async function sendMagicLink() {
-        try {
-          const email = (
-            document.getElementById("emailInput")?.value || ""
-          ).trim();
-          if (!email) return out("Bitte Email eingeben 🙂");
-
-          out("📨 Magic Link wird gesendet…");
-          console.log("📨 sende Magic Link an", email);
-
-          const { data, error } = await supabaseClient.auth.signInWithOtp({
-            email,
-            options: {
-              // wichtig: muss in Supabase Redirect URLs erlaubt sein
-              emailRedirectTo: window.location.href.split("#")[0],
-            },
-          });
-
-          if (error) throw error;
-
-          out("✅ Link gesendet! Check deine Mail 😊");
-          console.log("✅ Magic Link gesendet", data);
-        } catch (e) {
-          console.error("❌ Magic Link Fehler:", e);
-          out("❌ Magic Link Fehler: " + (e?.message || e));
-        }
-      }
-
-      async function logout() {
-        try {
-          await supabaseClient.auth.signOut();
-          out("👋 Ausgeloggt.");
-          console.log("👋 ausgeloggt");
-          updateAuthUI(null);
-          // optional: UI “leer” oder local cache anzeigen
-          renderAll();
-        } catch (e) {
-          console.error("❌ Logout Fehler:", e);
-          out("❌ Logout Fehler: " + (e?.message || e));
-        }
-      }
-
-      function updateAuthUI(session) {
-        const status = document.getElementById("authStatus");
-        if (!status) return;
-
-        if (session?.user) {
-          status.textContent = `Eingeloggt: ${
-            session.user.email || session.user.id
-          }`;
-        } else {
-          status.textContent = "Nicht eingeloggt";
-        }
-      }
-
-      // Hilfsfunktion: Session holen (und ggf. URL-Hash verarbeiten)
-      async function getSessionSafe() {
-        // Supabase v2 kann Session aus URL automatisch ziehen.
-        const { data, error } = await supabaseClient.auth.getSession();
-        if (error) throw error;
-        return data.session;
-      }
-
-      // ==========================
-      // SUPABASE LOADS (Skeleton)
-      // ==========================
-      // HIER kommen gleich die echten Loader für entries/plants/plantNotes rein.
-      // Für jetzt erstmal nur ein "logged in?"-Beweis.
-
-      async function initApp() {
-        console.log("🚀 initApp gestartet");
-        try {
-          // 1) Session prüfen
-          const session = await getSessionSafe();
-          updateAuthUI(session);
-
-          if (!session) {
-            console.log("🔒 Kein Login -> zeige lokale Daten");
-            out("🔒 Bitte einloggen (Magic Link), um Geräte-Sync zu nutzen.");
-            renderAll(); // zeigt local cache
-            console.log("✅ initApp fertig (local)");
-            return;
-          }
-
-          // 2) Wenn eingeloggt: hier werden wir Supabase als Quelle laden
-          out("✅ Eingeloggt. Lade Daten von Supabase…");
-          console.log("✅ Eingeloggt -> lade Supabase Daten…");
-
-          await initFromSupabase();
-          renderAll();
-
-          renderAll(); // vorerst: zeigt weiterhin local, bis wir initFromSupabase fertig haben
-          out("✅ Eingeloggt (Supabase Load kommt als nächstes)");
-          console.log("✅ initApp fertig");
-        } catch (e) {
-          console.error("❌ initApp Fehler:", e);
-          out("❌ initApp Fehler: " + (e?.message || e));
-          renderAll();
-        }
-      }
-
-      // Wichtig: auf Auth-Events reagieren (Magic link login passiert manchmal “nachträglich”)
-      supabaseClient.auth.onAuthStateChange((event, session) => {
-        console.log("🔔 Auth event:", event);
-        updateAuthUI(session);
-
-        // wenn Login gerade passiert ist: dann neu laden
-        if (event === "SIGNED_IN") {
-          out("✅ Login erkannt. Daten werden geladen…");
-          // später: initFromSupabase()
-          renderAll();
-        }
-      });
-
-      // Start
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initApp);
-      } else {
-        initApp();
-      }
-
-      // Exports für onclick im HTML:
+      window.exportLocalData = exportLocalData;
+      window.importLocalData = importLocalData;
       window.sendMagicLink = sendMagicLink;
       window.logout = logout;
     </script>
