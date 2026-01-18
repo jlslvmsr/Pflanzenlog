@@ -915,7 +915,14 @@ if (!sbLib || typeof sbLib.createClient !== "function") {
 }
 const supabaseClient =
   sbLib && typeof sbLib.createClient === "function"
-    ? sbLib.createClient(SUPABASE_URL.replace(/\/$/, ""), SUPABASE_ANON_KEY)
+    ? sbLib.createClient(SUPABASE_URL.replace(/\/$/, ""), SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          storage: window.localStorage,
+        },
+      })
     : null;
 
 /* =========================================================
