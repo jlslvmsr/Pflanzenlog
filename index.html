@@ -535,6 +535,9 @@
         <button class="btn-danger" onclick="wipeSupabaseData()">
   🧨 Supabase-Daten löschen (nur ich)
 </button>
+        <button class="btn-note" onclick="pushLocalToSupabase()">
+  ☁️ Lokale Daten → Supabase
+</button>
       </div>
     </div>
 
@@ -1324,7 +1327,50 @@ function scheduleNotesSync(map) {
 }
   }, 600);
 }
+//kann gelöscht werden bis 8
+      async function pushLocalToSupabase() {
+  try {
+    if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
+    const session = await getSessionSafe().catch(() => null);
+    if (!session) {
+      out("🔒 Bitte einloggen, dann nochmal.");
+      return;
+    }
+
+    const entries = loadEntriesFromLocal();
+    const plants  = loadPlantsFromLocal();
+    const notes   = loadNotesFromLocal();
+
+    if (!Array.isArray(entries) || !Array.isArray(plants) || typeof notes !== "object") {
+      throw new Error("Lokale Daten haben ein unerwartetes Format.");
+    }
+
+    const ok = confirm(
+      `Lokale Daten zu Supabase hochladen?\n\n` +
+      `Entries: ${entries.length}\nPlants: ${plants.length}\nNotes: ${Object.keys(notes||{}).length}\n\n` +
+      `Das überschreibt den aktuellen Supabase-Stand (für deinen User).`
+    );
+    if (!ok) return;
+
+    out("☁️ Upload: plants…");
+    await sbReplaceAll("plants", plants, () => Date.now());
+
+    out("☁️ Upload: plant_notes…");
+    await sbReplaceAll("plant_notes", [notes], () => Date.now());
+
+    out("☁️ Upload: entries…");
+    await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
+
+    out("✅ Lokale Daten sind jetzt in Supabase.");
+    if (typeof initFromSupabase === "function") await initFromSupabase();
+    if (typeof renderAll === "function") renderAll();
+  } catch (e) {
+    console.error("❌ pushLocalToSupabase Fehler:", e);
+    out("❌ Upload fehlgeschlagen: " + (e?.message || e));
+  }
+}
+window.pushLocalToSupabase = pushLocalToSupabase;
 /* =========================================================
    8) Auth (Magic Link) + UI Hooks
    Erwartete HTML-Elemente:
