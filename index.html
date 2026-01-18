@@ -1277,21 +1277,58 @@ async function getSessionSafe() {
 async function initFromSupabase() {
   if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
+  // --- ENTRIES ---
   console.log("⬇️ Lade entries von Supabase…");
   const remoteEntries = await sbFetchPayloads("entries");
-  saveEntriesToLocal(remoteEntries);
-  console.log("✅ entries loaded:", remoteEntries.length);
+  const localEntries = loadEntriesFromLocal();
 
+  if (remoteEntries.length > 0) {
+    saveEntriesToLocal(remoteEntries);
+    console.log("✅ entries loaded from remote:", remoteEntries.length);
+  } else {
+    console.log("ℹ️ remote entries leer -> lokale behalten:", localEntries.length);
+    // optional: wenn lokal was da ist, direkt hochsyncen
+    if (localEntries.length > 0) {
+      console.log("☁️ remote leer, sync lokale entries hoch…");
+      await sbReplaceAll("entries", localEntries, (e) => e?.ts || Date.now());
+      console.log("✅ lokale entries hochgesynct");
+    }
+  }
+
+  // --- PLANTS ---
   console.log("⬇️ Lade plants von Supabase…");
   const remotePlants = await sbFetchPayloads("plants");
-  if (remotePlants.length) savePlantsToLocal(remotePlants);
-  console.log("✅ plants loaded:", remotePlants.length);
+  const localPlants = loadPlantsFromLocal();
 
+  if (remotePlants.length > 0) {
+    savePlantsToLocal(remotePlants);
+    console.log("✅ plants loaded from remote:", remotePlants.length);
+  } else {
+    console.log("ℹ️ remote plants leer -> lokale behalten:", localPlants.length);
+    if (localPlants.length > 0) {
+      console.log("☁️ remote leer, sync lokale plants hoch…");
+      await sbReplaceAll("plants", localPlants, () => Date.now());
+      console.log("✅ lokale plants hochgesynct");
+    }
+  }
+
+  // --- NOTES (map) ---
   console.log("⬇️ Lade plant_notes von Supabase…");
   const remoteNotesArr = await sbFetchPayloads("plant_notes");
-  const remoteNotes = remoteNotesArr[0] || {};
-  if (remoteNotes && typeof remoteNotes === "object") saveNotesToLocal(remoteNotes);
-  console.log("✅ plant_notes loaded");
+  const remoteNotes = remoteNotesArr[0] || null;
+  const localNotes = loadNotesFromLocal();
+
+  if (remoteNotes && typeof remoteNotes === "object" && Object.keys(remoteNotes).length) {
+    saveNotesToLocal(remoteNotes);
+    console.log("✅ plant_notes loaded from remote");
+  } else {
+    console.log("ℹ️ remote notes leer -> lokale behalten:", Object.keys(localNotes || {}).length);
+    if (localNotes && Object.keys(localNotes).length) {
+      console.log("☁️ remote leer, sync lokale notes hoch…");
+      await sbReplaceAll("plant_notes", [localNotes], () => Date.now());
+      console.log("✅ lokale notes hochgesynct");
+    }
+  }
 }
 
 async function initApp() {
