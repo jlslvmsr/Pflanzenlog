@@ -833,11 +833,15 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
  
     <script>
+      const DEBUG_ENABLED = false;
    /* =========================================================
    0) iPad Debug Console (robust)
    ========================================================= */
-
-(function () {
+if (DEBUG_ENABLED) {
+  (function () {
+    let box = null;
+    const buffer = [];
+    (function () {
   let box = null;
   const buffer = [];
 
