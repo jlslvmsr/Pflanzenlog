@@ -832,6 +832,8 @@
     
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+  alert("BOOT: JS läuft");
+</script>    <script>
 /* =========================================================
    0) iPad Debug Console (robust)
    ========================================================= */
@@ -1361,8 +1363,9 @@ async function sendMagicLink() {
     out("❌ Magic Link Exception: " + (e?.message || String(e)));
   }
 }
-
-async function logout() {
+window.sendMagicLink = sendMagicLink;
+window.logout = logout;
+  async function logout() {
   try {
     if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
