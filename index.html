@@ -1078,18 +1078,17 @@
       // SUPABASE HELPERS (generic replaceAll per table)
       // ==========================
       async function sbFetchPayloads(table) {
-        if (!supabaseClient) throw new Error("supabaseClient ist null");
+  if (!supabaseClient) throw new Error("supabaseClient ist null");
 
-        const { data, error } = await supabaseClient
-          .from(table)
-          .select("payload, ts")
-          .eq("device_id", DEVICE_ID)
-          .order("ts", { ascending: false })
-          .limit(5000);
+  const { data, error } = await supabaseClient
+    .from(table)
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(5000);
 
-        if (error) throw error;
-        return (data || []).map((r) => r.payload).filter(Boolean);
-      }
+  if (error) throw error;
+  return data || [];
+}
 
       async function sbReplaceAll(table, payloads, tsGetter) {
         if (!supabaseClient) throw new Error("supabaseClient ist null");
