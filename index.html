@@ -1309,28 +1309,55 @@ function updateAuthUI(session) {
     : "Nicht eingeloggt";
 }
 
+let MAGIC_LINK_COOLDOWN_UNTIL = 0;
+
 async function sendMagicLink() {
   try {
     if (!supabaseClient) throw new Error("supabaseClient fehlt");
+
+    const now = Date.now();
+    if (now < MAGIC_LINK_COOLDOWN_UNTIL) {
+      const sec = Math.ceil((MAGIC_LINK_COOLDOWN_UNTIL - now) / 1000);
+      out(`⏳ Bitte ${sec}s warten, dann nochmal.`);
+      return;
+    }
+
     const email = (document.getElementById("emailInput")?.value || "").trim();
     if (!email) return out("Bitte Email eingeben 🙂");
 
     out("📨 Magic Link wird gesendet…");
     console.log("📨 sende Magic Link an", email);
 
-    const { error } = await supabaseClient.auth.signInWithOtp({
+    const redirectTo = window.location.origin + window.location.pathname; // sauber für Safari
+    console.log("↪️ redirectTo:", redirectTo);
+
+    const { data, error } = await supabaseClient.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: window.location.href.split("#")[0],
+        emailRedirectTo: redirectTo,
       },
     });
-    if (error) throw error;
+
+    if (error) {
+      // Supabase Rate Limit (kommt schnell, wenn man mehrfach klickt)
+      if (error.status === 429) {
+        MAGIC_LINK_COOLDOWN_UNTIL = Date.now() + 6500;
+        out("⏳ Supabase Sicherheitslimit: bitte 6 Sekunden warten und nochmal.");
+      } else {
+        out("❌ Magic Link Fehler: " + (error.message || "unbekannt"));
+      }
+      console.error("❌ Magic Link Fehler:", error);
+      return;
+    }
+
+    // Cooldown gegen Doppel-Klick
+    MAGIC_LINK_COOLDOWN_UNTIL = Date.now() + 6500;
 
     out("✅ Link gesendet! Check deine Mail 😊");
-    console.log("✅ Magic Link gesendet");
+    console.log("✅ Magic Link gesendet", data);
   } catch (e) {
-    console.error("❌ Magic Link Fehler:", e);
-    out("❌ Magic Link Fehler: " + (e?.message || e));
+    console.error("❌ Magic Link Exception:", e);
+    out("❌ Magic Link Exception: " + (e?.message || String(e)));
   }
 }
 
