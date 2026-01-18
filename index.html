@@ -959,6 +959,99 @@ function out(msg) {
 }
 
 /* =========================================================
+   4.x) Missing Helpers / UI Utilities (required by rest of app)
+   ========================================================= */
+
+// --- globals used across dialogs / actions ---
+let pendingRoomPlant = null;
+let pendingPlantToDelete = null;
+let pendingPlantForNote = null;
+
+// --- Dialog helpers ---
+function openDialog(id) {
+  const dlg = document.getElementById(id);
+  if (!dlg) {
+    console.error("openDialog: Dialog nicht gefunden:", id);
+    return;
+  }
+  if (typeof dlg.showModal === "function") {
+    if (!dlg.open) dlg.showModal();
+  } else {
+    // Fallback (sehr alt): einfach anzeigen
+    dlg.setAttribute("open", "open");
+  }
+}
+
+function closeDialog(id) {
+  const dlg = document.getElementById(id);
+  if (!dlg) return;
+  if (typeof dlg.close === "function") {
+    if (dlg.open) dlg.close();
+  } else {
+    dlg.removeAttribute("open");
+  }
+}
+
+// Optional: Klick auf Backdrop schließt Dialog (iPad-freundlich)
+(function enableDialogBackdropClose() {
+  document.addEventListener("click", (e) => {
+    const dlg = e.target;
+    if (dlg && dlg.tagName === "DIALOG") {
+      const rect = dlg.getBoundingClientRect();
+      const inDialog =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      if (!inDialog) dlg.close();
+    }
+  });
+})();
+
+// --- Data helpers ---
+function uniq(arr) {
+  if (!Array.isArray(arr)) return [];
+  return Array.from(new Set(arr.filter((x) => x !== null && x !== undefined)));
+}
+
+function setUnion(a, b) {
+  const aa = Array.isArray(a) ? a : [];
+  const bb = Array.isArray(b) ? b : [];
+  return uniq([...aa, ...bb]);
+}
+
+// --- Safe HTML for innerHTML usage ---
+function escapeHtml(str) {
+  const s = String(str ?? "");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// --- UUID (fallback if crypto.randomUUID missing) ---
+function uuid() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // RFC4122-ish fallback
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// --- Date helpers ---
+function isoToNoonTs(iso) {
+  // iso: "YYYY-MM-DD" -> timestamp at 12:00 local time (stable against DST edge cases)
+  const [y, m, d] = String(iso || "").split("-").map((x) => parseInt(x, 10));
+  if (!y || !m || !d) return Date.now();
+  return new Date(y, m - 1, d, 12, 0, 0, 0).getTime();
+}  
+/* =========================================================
    5) Local Cache (Entries / Plants / Notes)
    ========================================================= */
 function loadEntriesFromLocal() {
