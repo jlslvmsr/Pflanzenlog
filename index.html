@@ -1155,7 +1155,7 @@ async function sbReplaceAll(table, payloads, tsGetter) {
     console.log(`ℹ️ [${table}] nichts zu speichern`);
     return;
   }
-
+console.log(`[${table}] first row preview:`, rows[0]);
   // 3️⃣ Chunked Insert (sicher & stabil)
   const CHUNK = 200;
   for (let i = 0; i < rows.length; i += CHUNK) {
@@ -1188,10 +1188,13 @@ function scheduleEntriesSync(entries) {
       await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
       console.log("✅ entries synced");
       out("✅ Supabase Sync ok");
-    } catch (e) {
-      console.error("❌ entries sync error:", e.message, e);
-      out("❌ Supabase Sync Fehler: " + e.message);
-    }
+   } catch (e) {
+  console.error("❌ plants sync error (full):", e);
+  const msg = e?.message || String(e);
+  const code = e?.code || e?.status || "";
+  const details = e?.details || e?.hint || "";
+  out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
+}
   }, 600);
 }
 
@@ -1214,10 +1217,13 @@ function schedulePlantsSync(plants) {
       await sbReplaceAll("plants", plants, () => Date.now());
       console.log("✅ plants synced");
       out("✅ Supabase Sync ok");
-    } catch (e) {
-      console.error("❌ plants sync error:", e.message, e);
-      out("❌ Supabase Sync Fehler: " + e.message);
-    }
+   } catch (e) {
+  console.error("❌ plants sync error (full):", e);
+  const msg = e?.message || String(e);
+  const code = e?.code || e?.status || "";
+  const details = e?.details || e?.hint || "";
+  out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
+}
   }, 600);
 }
 
@@ -1240,9 +1246,12 @@ function scheduleNotesSync(map) {
       console.log("✅ plant_notes synced");
       out("✅ Supabase Sync ok");
     } catch (e) {
-      console.error("❌ plant_notes sync error:", e.message, e);
-      out("❌ Supabase Sync Fehler: " + e.message);
-    }
+  console.error("❌ plants sync error (full):", e);
+  const msg = e?.message || String(e);
+  const code = e?.code || e?.status || "";
+  const details = e?.details || e?.hint || "";
+  out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
+}
   }, 600);
 }
 
