@@ -532,6 +532,9 @@
       <div class="row" style="justify-content: space-between">
         <span class="muted" id="authStatus">Nicht eingeloggt</span>
         <button class="btn-ghost" onclick="logout()">Logout</button>
+        <button class="btn-danger" onclick="wipeSupabaseData()">
+  🧨 Supabase-Daten löschen (nur ich)
+</button>
       </div>
     </div>
 
@@ -1200,6 +1203,40 @@ console.log(`[${table}] first row preview:`, rows[0]);
   console.log(`✅ [${table}] Sync abgeschlossen (${rows.length} rows)`);
 }
 
+async function wipeSupabaseData() {
+  try {
+    if (!supabaseClient) throw new Error("supabaseClient fehlt");
+
+    const session = await getSessionSafe().catch(() => null);
+    if (!session) {
+      out("🔒 Bitte einloggen, um Supabase löschen zu können.");
+      return;
+    }
+
+    const ok = confirm(
+      "Wirklich ALLE aktuellen Supabase-Daten (entries, plants, plant_notes) für deinen Account löschen?\n\n" +
+      "Das betrifft nur DEINEN User (RLS)."
+    );
+    if (!ok) return;
+
+    out("🧨 Lösche Supabase-Daten…");
+    console.log("🧨 wipeSupabaseData start");
+
+    // sbReplaceAll löscht zuerst alle Rows für user_id und inserted dann.
+    // Wenn payloads leer sind, bleibt es beim Löschen – perfekt zum Reset.
+    await sbReplaceAll("entries", [], () => Date.now());
+    await sbReplaceAll("plants", [], () => Date.now());
+    await sbReplaceAll("plant_notes", [], () => Date.now());
+
+    out("✅ Supabase ist jetzt leer. Als nächstes: Backup importieren.");
+    console.log("✅ wipeSupabaseData done");
+  } catch (e) {
+    console.error("❌ wipeSupabaseData Fehler:", e);
+    out("❌ Löschen fehlgeschlagen: " + (e?.message || e));
+  }
+}
+
+window.wipeSupabaseData = wipeSupabaseData;      
 /* =========================================================
    7) Public Data API (der REST deiner App nutzt NUR diese 6 Funktionen)
    ========================================================= */
