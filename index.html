@@ -603,12 +603,14 @@ ul { margin: 8px 0 0; padding-left: 18px; }
       <div class="row" style="justify-content: space-between">
         <span class="muted" id="authStatus">Nicht eingeloggt</span>
         <button class="btn-ghost" onclick="logout()">Logout</button>
-        <button class="btn-danger" onclick="wipeSupabaseData()">
-  🧨 Supabase-Daten löschen (nur ich)
+        <button id="btnWipeSupabase" class="btn-danger" onclick="wipeSupabaseData()">
+  🧨 Supabase-Daten löschen
 </button>
-        <button class="btn-note" onclick="pushLocalToSupabase()">
-  ☁️ Lokale Daten → Supabase
+
+<button id="btnPushSupabase" class="btn-note" onclick="pushLocalToSupabase()">
+  ☁️ Lokal → Supabase
 </button>
+
       </div>
     </div>
 
@@ -1311,6 +1313,9 @@ console.log(`[${table}] first row preview:`, rows[0]);
 
 async function wipeSupabaseData() {
   try {
+    // 🔒 ADMIN-SCHUTZ
+    if (!(await guardAdminOrWarn())) return;
+
     if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
     const session = await getSessionSafe().catch(() => null);
@@ -1328,8 +1333,7 @@ async function wipeSupabaseData() {
     out("🧨 Lösche Supabase-Daten…");
     console.log("🧨 wipeSupabaseData start");
 
-    // sbReplaceAll löscht zuerst alle Rows für user_id und inserted dann.
-    // Wenn payloads leer sind, bleibt es beim Löschen – perfekt zum Reset.
+    // Alle Tabellen für diesen User leeren
     await sbReplaceAll("entries", [], () => Date.now());
     await sbReplaceAll("plants", [], () => Date.now());
     await sbReplaceAll("plant_notes", [], () => Date.now());
@@ -1433,6 +1437,9 @@ function scheduleNotesSync(map) {
 //kann gelöscht werden bis 8
       async function pushLocalToSupabase() {
   try {
+    // 🔒 ADMIN-SCHUTZ
+    if (!(await guardAdminOrWarn())) return;
+
     if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
     const session = await getSessionSafe().catch(() => null);
@@ -1451,7 +1458,7 @@ function scheduleNotesSync(map) {
 
     const ok = confirm(
       `Lokale Daten zu Supabase hochladen?\n\n` +
-      `Entries: ${entries.length}\nPlants: ${plants.length}\nNotes: ${Object.keys(notes||{}).length}\n\n` +
+      `Entries: ${entries.length}\nPlants: ${plants.length}\nNotes: ${Object.keys(notes || {}).length}\n\n` +
       `Das überschreibt den aktuellen Supabase-Stand (für deinen User).`
     );
     if (!ok) return;
@@ -1473,6 +1480,7 @@ function scheduleNotesSync(map) {
     out("❌ Upload fehlgeschlagen: " + (e?.message || e));
   }
 }
+
 window.pushLocalToSupabase = pushLocalToSupabase;
 /* =========================================================
    8) Auth (Magic Link) + UI Hooks
@@ -1682,6 +1690,8 @@ async function initApp() {
 
     const session = await getSessionSafe();
     updateAuthUI(session);
+    updateAdminUI();
+
 
     if (!session) {
       console.log("🔒 Kein Login -> local Cache");
@@ -1792,6 +1802,17 @@ async function guardAdminOrWarn() {
   }
   return true;
 }
+      async function updateAdminUI() {
+  const isAdmin = await isAdminUser();
+
+  const b1 = document.getElementById("btnWipeSupabase");
+  const b2 = document.getElementById("btnPushSupabase");
+
+  // Wenn kein Admin: Buttons ausblenden
+  if (b1) b1.style.display = isAdmin ? "" : "none";
+  if (b2) b2.style.display = isAdmin ? "" : "none";
+}
+      
       
       // ==========================
       // NORMALIZE PLANT + GETTERS
@@ -3171,9 +3192,11 @@ function closeUserMenu() {
   closeDialog("userMenuDialog");
 }
 
-function openSettingsMenu() {
+async function openSettingsMenu() {
+  await updateAdminUI();
   openDialog("settingsMenuDialog");
 }
+
 function closeSettingsMenu() {
   closeDialog("settingsMenuDialog");
 }
