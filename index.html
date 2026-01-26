@@ -2810,123 +2810,127 @@ async function guardAdminOrWarn() {
       }
 
       function renderDayViewPopup() {
-        const body = document.getElementById("dayViewBody");
-        if (!body) return;
-        body.innerHTML = "";
+  const body = document.getElementById("dayViewBody");
+  if (!body) return;
+  body.innerHTML = "";
 
-        const entries = loadEntries();
-        const iso = state.selectedISO;
-        const agg = aggregateDay(entries, iso);
+  const entries = loadEntries();
+  const iso = state.selectedISO;
+  const agg = aggregateDay(entries, iso);
 
-        const waterDone = new Set(agg.water.done || []);
-        const fertDone = new Set(agg.fertilize.done || []);
+  const waterDone = new Set(agg.water.done || []);
+  const fertDone = new Set(agg.fertilize.done || []);
 
-        const commentsByPlant = new Map();
-        (agg.comments || []).forEach((c) => {
-          const k = c.plant || "Unbekannt";
-          commentsByPlant.set(k, (commentsByPlant.get(k) || 0) + 1);
-        });
+  // ✅ Kommentare pro Pflanze sammeln (pinned zuerst; agg.comments ist bereits so sortiert)
+  const commentsMap = new Map();
+  (agg.comments || []).forEach((c) => {
+    const plant = c.plant || "Unbekannt";
+    if (!commentsMap.has(plant)) commentsMap.set(plant, []);
+    commentsMap.get(plant).push(c);
+  });
 
-        function statusPillsFor(name) {
-          const pills = [];
-          if (waterDone.has(name)) pills.push(pillMini("💧", "water"));
-          if (fertDone.has(name)) pills.push(pillMini("🧪", "fert"));
-          const cc = commentsByPlant.get(name) || 0;
-          if (cc) pills.push(pillMini(`📝${cc}`, "note"));
-          if (!waterDone.has(name) && !fertDone.has(name))
-            pills.unshift(pillMini("—", "none"));
-          return pills.join("");
-        }
+  function statusPillsFor(name) {
+    const pills = [];
+    if (waterDone.has(name)) pills.push(pillMini("💧", "water"));
+    if (fertDone.has(name)) pills.push(pillMini("🧪", "fert"));
+    const cc = (commentsMap.get(name) || []).length;
+    if (cc) pills.push(pillMini(`📝${cc}`, "note"));
+    if (!waterDone.has(name) && !fertDone.has(name)) pills.unshift(pillMini("—", "none"));
+    return pills.join("");
+  }
 
-        const all = getAllPlants();
-        const active = all.filter(
-          (p) => p.active !== false && p.room !== REMOVED_ROOM
-        );
-        const removed = all.filter(
-          (p) => p.room === REMOVED_ROOM || p.active === false
-        );
+  function commentsHtmlFor(name) {
+    const arr = commentsMap.get(name) || [];
+    if (!arr.length) return "";
+    return `
+      <div class="muted" style="margin-top:6px;">
+        ${arr
+          .map((c) => {
+            const pin = c.pinned ? " <span class='pill' style='transform:translateY(-1px);'>📌</span>" : "";
+            return `
+              <div style="margin-top:6px; white-space:pre-wrap;">
+                ${pin}${escapeHtml(c.text)}
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
 
-        const activeGrouped = groupPlantsByRoom(active);
-        activeGrouped.forEach(([room, ps]) => {
-          if (room === REMOVED_ROOM) return;
-          if (!ps.length) return;
+  const all = getAllPlants();
+  const active = all.filter((p) => p.active !== false && p.room !== REMOVED_ROOM);
+  const removed = all.filter((p) => p.room === REMOVED_ROOM || p.active === false);
 
-          const roomCard = document.createElement("div");
-          roomCard.className = "comment-item";
-          roomCard.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
+  const activeGrouped = groupPlantsByRoom(active);
 
-          ps.forEach((p) => {
-            const line = document.createElement("div");
-            line.style.marginTop = "10px";
-            line.innerHTML = `🪴 <b>${escapeHtml(p.name)}</b>
-          <div class="status-pills">${statusPillsFor(p.name)}</div>`;
-            roomCard.appendChild(line);
-          });
+  // ✅ Aktive Pflanzen: pro Pflanze Status + Kommentare direkt darunter
+  activeGrouped.forEach(([room, ps]) => {
+    if (room === REMOVED_ROOM) return;
+    if (!ps.length) return;
 
-          body.appendChild(roomCard);
-        });
+    const roomCard = document.createElement("div");
+    roomCard.className = "comment-item";
+    roomCard.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
 
-        // Entfernte Pflanzen nur wenn an dem Tag relevant
-        const relevantNames = new Set(
-          [
-            ...(agg.water.snapshot || []),
-            ...(agg.fertilize.snapshot || []),
-            ...(agg.water.done || []),
-            ...(agg.fertilize.done || []),
-            ...(agg.comments || []).map((c) => c.plant),
-          ].filter(Boolean)
-        );
+    ps.forEach((p) => {
+      const line = document.createElement("div");
+      line.style.marginTop = "10px";
 
-        const removedRelevant = removed
-          .filter((p) => relevantNames.has(p.name))
-          .sort((a, b) => a.name.localeCompare(b.name, "de"));
+      line.innerHTML = `
+        🪴 <b>${escapeHtml(p.name)}</b>
+        <div class="status-pills">${statusPillsFor(p.name)}</div>
+        ${commentsHtmlFor(p.name)}
+      `;
 
-        if (removedRelevant.length) {
-          const roomCard = document.createElement("div");
-          roomCard.className = "comment-item";
-          roomCard.innerHTML = `<b>🏚️ ${escapeHtml(REMOVED_ROOM)}</b>
-        <div class="muted" style="margin-top:6px;">Diese Pflanzen wurden entfernt, werden aber für die Historie angezeigt.</div>`;
+      roomCard.appendChild(line);
+    });
 
-          removedRelevant.forEach((p) => {
-            const line = document.createElement("div");
-            line.style.marginTop = "10px";
-            line.innerHTML = `🪴 <b>${escapeHtml(p.name)}</b>
-          <div class="status-pills">${statusPillsFor(p.name)}</div>`;
-            roomCard.appendChild(line);
-          });
+    body.appendChild(roomCard);
+  });
 
-          body.appendChild(roomCard);
-        }
+  // Entfernte Pflanzen nur wenn an dem Tag relevant
+  const relevantNames = new Set(
+    [
+      ...(agg.water.snapshot || []),
+      ...(agg.fertilize.snapshot || []),
+      ...(agg.water.done || []),
+      ...(agg.fertilize.done || []),
+      ...(agg.comments || []).map((c) => c.plant),
+    ].filter(Boolean)
+  );
 
-        // Kommentare
-        const comments = agg.comments || [];
-        const commentsCard = document.createElement("div");
-        commentsCard.className = "comment-item";
-        commentsCard.innerHTML = "<b>📝 Kommentare</b>";
+  const removedRelevant = removed
+    .filter((p) => relevantNames.has(p.name))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"));
 
-        if (!comments.length) {
-          const p = document.createElement("div");
-          p.className = "muted";
-          p.style.marginTop = "8px";
-          p.textContent = "Keine Kommentare an diesem Tag.";
-          commentsCard.appendChild(p);
-        } else {
-          comments.forEach((c) => {
-            const item = document.createElement("div");
-            item.style.marginTop = "10px";
-            item.innerHTML =
-              `🪴 <b>${escapeHtml(c.plant)}</b>${
-                c.pinned ? " <span class='pill'>📌</span>" : ""
-              }` +
-              `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
-                c.text
-              )}</div>`;
-            commentsCard.appendChild(item);
-          });
-        }
+  if (removedRelevant.length) {
+    const roomCard = document.createElement("div");
+    roomCard.className = "comment-item";
+    roomCard.innerHTML = `<b>🏚️ ${escapeHtml(REMOVED_ROOM)}</b>
+      <div class="muted" style="margin-top:6px;">
+        Diese Pflanzen wurden entfernt, werden aber für die Historie angezeigt.
+      </div>`;
 
-        body.appendChild(commentsCard);
-      }
+    removedRelevant.forEach((p) => {
+      const line = document.createElement("div");
+      line.style.marginTop = "10px";
+
+      line.innerHTML = `
+        🪴 <b>${escapeHtml(p.name)}</b>
+        <div class="status-pills">${statusPillsFor(p.name)}</div>
+        ${commentsHtmlFor(p.name)}
+      `;
+
+      roomCard.appendChild(line);
+    });
+
+    body.appendChild(roomCard);
+  }
+
+  // ✅ Sammelblock "Kommentare" am Ende bewusst entfernt
+}
+
 
       function saveDayCommentFromPopup() {
         const plant = (
