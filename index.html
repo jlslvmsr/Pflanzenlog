@@ -1755,7 +1755,44 @@ if (document.readyState === "loading") {
 window.sendMagicLink = sendMagicLink;
 window.logout = logout;
 
+/* =========================================================
+   ADMIN-SCHUTZ (Supabase Aktionen nur für dich)
+   - Idee: nur bestimmte Email(s) dürfen Admin-Funktionen
+   ========================================================= */
 
+const ADMIN_EMAILS = [
+  "julia.salvamoser@web.de", // <-- HIER deine Login-Email eintragen
+  // "zweite@email.de",      // optional
+];
+
+function normalizeEmail(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+async function isAdminUser() {
+  try {
+    if (!supabaseClient) return false;
+    const session = await getSessionSafe().catch(() => null);
+    const email = normalizeEmail(session?.user?.email);
+    if (!email) return false;
+
+    return ADMIN_EMAILS.map(normalizeEmail).includes(email);
+  } catch (e) {
+    console.error("isAdminUser error:", e);
+    return false;
+  }
+}
+
+async function guardAdminOrWarn() {
+  const ok = await isAdminUser();
+  if (!ok) {
+    out("🔒 Diese Supabase-Funktion ist nur für den Admin freigeschaltet.");
+    alert("🔒 Diese Supabase-Funktion ist nur für den Admin freigeschaltet.");
+    return false;
+  }
+  return true;
+}
+      
       // ==========================
       // NORMALIZE PLANT + GETTERS
       // ==========================
