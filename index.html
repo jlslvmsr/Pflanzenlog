@@ -9,498 +9,291 @@
     <title>Pflanzenlog</title>
 
     <style>
-      :root {
-        --bg0: #06150f;
-        --bg1: #0b2418;
-        --bg2: #0f3523;
-        --glow1: rgba(34, 197, 94, 0.22);
-        --glow2: rgba(132, 204, 22, 0.18);
+/* =========================================================
+   1) CSS VARIABLES / DESIGN TOKENS
+   ========================================================= */
+:root {
+  --bg0: #06150f;
+  --bg1: #0b2418;
+  --bg2: #0f3523;
 
-        --card: rgba(255, 255, 255, 0.14);
-        --card2: rgba(255, 255, 255, 0.1);
-        --stroke: rgba(255, 255, 255, 0.22);
+  --glow1: rgba(34, 197, 94, 0.22);
+  --glow2: rgba(132, 204, 22, 0.18);
 
-        --text: #ecfdf5;
-        --muted: rgba(236, 253, 245, 0.7);
+  --card: rgba(255, 255, 255, 0.14);
+  --card2: rgba(255, 255, 255, 0.1);
+  --stroke: rgba(255, 255, 255, 0.22);
 
-        --waterA: #38bdf8;
-        --waterB: #2563eb;
+  --text: #ecfdf5;
+  --muted: rgba(236, 253, 245, 0.7);
 
-        --fertA: #34d399;
-        --fertB: #16a34a;
+  --waterA: #38bdf8;
+  --waterB: #2563eb;
 
-        --noteA: #fbbf24;
-        --noteB: #f97316;
+  --fertA: #34d399;
+  --fertB: #16a34a;
 
-        --dangerA: #fb7185;
-        --dangerB: #ef4444;
+  --noteA: #fbbf24;
+  --noteB: #f97316;
 
-        --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
-        --soft: 0 10px 26px rgba(0, 0, 0, 0.4);
+  --dangerA: #fb7185;
+  --dangerB: #ef4444;
 
-        --r2: 22px;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --soft: 0 10px 26px rgba(0, 0, 0, 0.4);
 
-        --font: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial,
-          "Apple Color Emoji", "Segoe UI Emoji";
-      }
+  --r2: 22px;
 
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        font-family: var(--font);
-        margin: 0;
-        padding: calc(16px + env(safe-area-inset-top))
-          calc(16px + env(safe-area-inset-right))
-          calc(16px + env(safe-area-inset-bottom))
-          calc(16px + env(safe-area-inset-left));
-        color: var(--text);
-        background: radial-gradient(
-            900px 600px at 15% 10%,
-            var(--glow1),
-            transparent 60%
-          ),
-          radial-gradient(800px 500px at 85% 20%, var(--glow2), transparent 55%),
-          radial-gradient(
-            900px 600px at 50% 110%,
-            rgba(20, 184, 166, 0.12),
-            transparent 60%
-          ),
-          linear-gradient(180deg, var(--bg0), var(--bg1) 35%, var(--bg2));
-      }
-
-      h1 {
-        font-size: 28px;
-        letter-spacing: -0.4px;
-        margin: 8px 0 14px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-      h1 .leaf {
-        width: 34px;
-        height: 34px;
-        display: grid;
-        place-items: center;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        box-shadow: var(--soft);
-      }
-      h2 {
-        font-size: 18px;
-        margin: 10px 0;
-      }
-      h3 {
-        font-size: 16px;
-        margin: 10px 0;
-      }
-
-      .row {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-        margin-top: 10px;
-      }
-
-      .card,
-      .top-bar,
-      .bottom-bar {
-        background: linear-gradient(180deg, var(--card), var(--card2));
-        border: 1px solid var(--stroke);
-        border-radius: var(--r2);
-        padding: 14px;
-        box-shadow: var(--soft);
-        backdrop-filter: blur(16px) saturate(140%);
-        -webkit-backdrop-filter: blur(16px) saturate(140%);
-      }
-
-      .top-bar {
-        position: sticky;
-        top: 0;
-        z-index: 20;
-        margin-bottom: 12px;
-      }
-      .bottom-bar {
-        position: sticky;
-        bottom: 0;
-        z-index: 20;
-        margin-top: 12px;
-      }
-
-      #output {
-        margin-top: 10px;
-        color: var(--muted);
-        font-size: 14px;
-        min-height: 18px;
-      }
-
-      input,
-      select,
-      textarea {
-        width: 100%;
-        font-size: 16px;
-        padding: 12px 14px;
-        border-radius: 16px;
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        background: rgba(255, 255, 255, 0.1);
-        color: var(--text);
-        outline: none;
-      }
-      textarea {
-        min-height: 110px;
-        resize: vertical;
-      }
-      input::placeholder,
-      textarea::placeholder {
-        color: rgba(236, 253, 245, 0.55);
-      }
-
-      input:focus,
-      select:focus,
-      textarea:focus {
-        border-color: rgba(34, 197, 94, 0.55);
-        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
-      }
-
-      button {
-        font-size: 16px;
-        padding: 12px 18px;
-        border-radius: 999px;
-        border: 0;
-        cursor: pointer;
-        color: #fff;
-        font-weight: 700;
-        letter-spacing: 0.2px;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-        box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.28),
-          0 10px 22px rgba(0, 0, 0, 0.45);
-        transition: transform 0.1s ease, filter 0.15s ease,
-          box-shadow 0.15s ease;
-        -webkit-tap-highlight-color: transparent;
-      }
-      button:active {
-        transform: translateY(2px) scale(0.99);
-        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.28),
-          0 6px 16px rgba(0, 0, 0, 0.4);
-      }
-      button:hover {
-        filter: brightness(1.06) saturate(1.08);
-      }
-
-      .btn-water {
-        background: linear-gradient(135deg, var(--waterA), var(--waterB));
-      }
-      .btn-fert {
-        background: linear-gradient(135deg, var(--fertA), var(--fertB));
-      }
-      .btn-note {
-        background: linear-gradient(135deg, var(--noteA), var(--noteB));
-      }
-
-      .btn-ghost {
-        background: rgba(255, 255, 255, 0.14);
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
-      }
-      .btn-danger {
-        background: linear-gradient(135deg, var(--dangerA), var(--dangerB));
-      }
-
-      #calendar {
-        display: grid;
-        grid-template-columns: repeat(7, 1fr);
-        gap: 12px;
-        margin-top: 12px;
-        width: 100%;
-        max-width: 100%;
-      }
-      .card {
-        overflow: hidden;
-      }
-      .cal-head {
-        font-weight: 800;
-        font-size: 12px;
-        color: rgba(236, 253, 245, 0.7);
-        text-align: center;
-        padding: 2px 4px;
-      }
-
-      .day-btn {
-        appearance: none;
-        -webkit-appearance: none;
-
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 22px;
-        padding: 12px;
-        min-height: 92px;
-
-        background: rgba(255, 255, 255, 0.13);
-        color: var(--text);
-        text-align: left;
-
-        backdrop-filter: blur(14px) saturate(140%);
-        -webkit-backdrop-filter: blur(14px) saturate(140%);
-
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
-          0 14px 28px rgba(0, 0, 0, 0.42);
-
-        transition: transform 0.1s ease, box-shadow 0.14s ease,
-          filter 0.14s ease;
-        cursor: pointer;
-        touch-action: manipulation;
-        -webkit-tap-highlight-color: transparent;
-      }
-      .day-btn:active {
-        transform: translateY(2px) scale(0.985);
-        filter: brightness(0.98);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
-          0 9px 18px rgba(0, 0, 0, 0.36);
-      }
-      .day-btn:focus-visible {
-        outline: none;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
-          0 14px 28px rgba(0, 0, 0, 0.42), 0 0 0 3px rgba(34, 197, 94, 0.3);
-      }
-
-      .day-btn.today {
-        border-color: rgba(251, 191, 36, 0.35);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
-          0 14px 28px rgba(0, 0, 0, 0.42), 0 0 0 3px rgba(251, 191, 36, 0.18);
-      }
-      .day-btn.selected {
-        border-color: rgba(34, 197, 94, 0.45);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
-          0 14px 28px rgba(0, 0, 0, 0.42), 0 0 0 3px rgba(34, 197, 94, 0.22);
-      }
-      .today-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        font-weight: 900;
-        padding: 3px 8px;
-        border-radius: 999px;
-        margin-left: 8px;
-        background: rgba(251, 191, 36, 0.18);
-        border: 1px solid rgba(251, 191, 36, 0.3);
-        color: rgba(236, 253, 245, 0.95);
-      }
-
-      .badges {
-        margin-top: 8px;
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-        font-size: 12px;
-      }
-      .badge {
-        border-radius: 999px;
-        padding: 4px 10px;
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        background: rgba(255, 255, 255, 0.12);
-        color: rgba(236, 253, 245, 0.92);
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        line-height: 1;
-      }
-
-      .badge.b-total {
-        background: rgba(236, 253, 245, 0.14);
-        border-color: rgba(236, 253, 245, 0.22);
-      }
-      .badge.b-water {
-        background: rgba(56, 189, 248, 0.18);
-        border-color: rgba(56, 189, 248, 0.3);
-      }
-      .badge.b-fert {
-        background: rgba(52, 211, 153, 0.18);
-        border-color: rgba(52, 211, 153, 0.3);
-      }
-      .badge.b-comment {
-        background: rgba(251, 191, 36, 0.18);
-        border-color: rgba(251, 191, 36, 0.3);
-      }
-
-      .badge.comment-badge {
-        cursor: pointer;
-      }
-      .badge.big-comment {
-        font-size: 14px;
-        padding: 6px 12px;
-        transform: translateY(-1px);
-      }
-
-      dialog {
-        width: min(860px, 92vw);
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        border-radius: 22px;
-        padding: 14px;
-        background: linear-gradient(
-          180deg,
-          rgba(255, 255, 255, 0.16),
-          rgba(255, 255, 255, 0.1)
-        );
-        color: var(--text);
-        backdrop-filter: blur(18px) saturate(140%);
-        -webkit-backdrop-filter: blur(18px) saturate(140%);
-        box-shadow: var(--shadow);
-      }
-      dialog::backdrop {
-        background: rgba(0, 0, 0, 0.55);
-      }
-
-      ul {
-        margin: 8px 0 0;
-        padding-left: 18px;
-      }
-      .muted {
-        color: var(--muted);
-        font-size: 13px;
-      }
-
-      .plant-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        align-items: center;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 18px;
-        padding: 10px;
-        background: rgba(255, 255, 255, 0.1);
-        margin-top: 8px;
-        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.3);
-      }
-      .plant-actions {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-
-      .checklist {
-        margin-top: 12px;
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 8px;
-      }
-      .checkitem {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 18px;
-        padding: 10px;
-        background: rgba(255, 255, 255, 0.1);
-      }
-      .checkitem input {
-        width: 20px;
-        height: 20px;
-        accent-color: #22c55e;
-      }
-
-      .comment-item {
-        margin-top: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 18px;
-        padding: 12px;
-        background: rgba(255, 255, 255, 0.1);
-        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.3);
-      }
-      .comment-item.pinned {
-        background: rgba(251, 191, 36, 0.16);
-        border-color: rgba(251, 191, 36, 0.28);
-      }
-
-      .comment-header {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        align-items: center;
-      }
-      .comment-actions {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .comment-actions button {
-        padding: 10px 12px;
-        font-size: 14px;
-      }
-      .comment-text {
-        margin-top: 8px;
-        white-space: pre-wrap;
-        color: rgba(236, 253, 245, 0.92);
-      }
-
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 999px;
-        padding: 6px 10px;
-        font-size: 14px;
-        background: rgba(255, 255, 255, 0.1);
-        color: rgba(236, 253, 245, 0.9);
-      }
-      .pill input {
-        width: 20px;
-        height: 20px;
-        accent-color: #fbbf24;
-      }
-
-      .status-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 6px;
-      }
-      .pill-mini {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 5px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        background: rgba(255, 255, 255, 0.1);
-        font-weight: 800;
-        font-size: 13px;
-        line-height: 1;
-      }
-      .pill-mini.water {
-        background: rgba(56, 189, 248, 0.16);
-        border-color: rgba(56, 189, 248, 0.28);
-      }
-      .pill-mini.fert {
-        background: rgba(52, 211, 153, 0.16);
-        border-color: rgba(52, 211, 153, 0.28);
-      }
-      .pill-mini.note {
-        background: rgba(251, 191, 36, 0.16);
-        border-color: rgba(251, 191, 36, 0.28);
-      }
-      .pill-mini.none {
-        background: rgba(255, 255, 255, 0.08);
-        border-color: rgba(255, 255, 255, 0.16);
-        opacity: 0.9;
-      }
-
-      .mini-label {
-        font-size: 13px;
-        font-weight: 800;
-        color: rgba(236, 253, 245, 0.82);
-      }
-      /* ==========================
-   iPhone / kleine Displays: Kalender passt komplett ohne rechts-scroll
-   ========================== */
-html, body {
-  max-width: 100%;
-  overflow-x: hidden; /* verhindert "abgeschnitten rechts"-Effekt */
+  --font: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial,
+    "Apple Color Emoji", "Segoe UI Emoji";
 }
 
-/* iPhone & kleine Geräte */
+/* =========================================================
+   2) GLOBAL RESET / SAFETY
+   ========================================================= */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden; /* 🔑 verhindert iOS-Rechts-Scroll */
+}
+
+body {
+  font-family: var(--font);
+  margin: 0;
+  padding: calc(16px + env(safe-area-inset-top))
+           calc(16px + env(safe-area-inset-right))
+           calc(16px + env(safe-area-inset-bottom))
+           calc(16px + env(safe-area-inset-left));
+  color: var(--text);
+  background:
+    radial-gradient(900px 600px at 15% 10%, var(--glow1), transparent 60%),
+    radial-gradient(800px 500px at 85% 20%, var(--glow2), transparent 55%),
+    radial-gradient(900px 600px at 50% 110%, rgba(20, 184, 166, 0.12), transparent 60%),
+    linear-gradient(180deg, var(--bg0), var(--bg1) 35%, var(--bg2));
+}
+
+/* =========================================================
+   3) TYPOGRAPHY
+   ========================================================= */
+h1 {
+  font-size: 28px;
+  letter-spacing: -0.4px;
+  margin: 8px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+h1 .leaf {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: var(--soft);
+}
+
+h2 {
+  font-size: 18px;
+  margin: 10px 0;
+}
+
+h3 {
+  font-size: 16px;
+  margin: 10px 0;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* =========================================================
+   4) LAYOUT BASICS
+   ========================================================= */
+.row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.card,
+.top-bar,
+.bottom-bar {
+  background: linear-gradient(180deg, var(--card), var(--card2));
+  border: 1px solid var(--stroke);
+  border-radius: var(--r2);
+  padding: 14px;
+  box-shadow: var(--soft);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-bottom: 12px;
+}
+
+.bottom-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin-top: 12px;
+}
+
+/* =========================================================
+   5) FORM ELEMENTS
+   ========================================================= */
+input,
+select,
+textarea {
+  width: 100%;
+  font-size: 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  outline: none;
+}
+
+textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(236, 253, 245, 0.55);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: rgba(34, 197, 94, 0.55);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
+
+/* =========================================================
+   6) BUTTONS
+   ========================================================= */
+button {
+  font-size: 16px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28),
+    0 10px 22px rgba(0, 0, 0, 0.45);
+  transition: transform 0.1s ease, filter 0.15s ease, box-shadow 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:active {
+  transform: translateY(2px) scale(0.99);
+}
+
+button:hover {
+  filter: brightness(1.06) saturate(1.08);
+}
+
+.btn-water { background: linear-gradient(135deg, var(--waterA), var(--waterB)); }
+.btn-fert  { background: linear-gradient(135deg, var(--fertA), var(--fertB)); }
+.btn-note  { background: linear-gradient(135deg, var(--noteA), var(--noteB)); }
+.btn-danger{ background: linear-gradient(135deg, var(--dangerA), var(--dangerB)); }
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+}
+
+/* =========================================================
+   7) CALENDAR GRID
+   ========================================================= */
+#calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.cal-head {
+  font-weight: 800;
+  font-size: 12px;
+  text-align: center;
+  color: rgba(236, 253, 245, 0.7);
+}
+
+.day-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 22px;
+  padding: 12px;
+  min-height: 92px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.13);
+  color: var(--text);
+  text-align: left;
+}
+
+.day-btn.today {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.day-btn.selected {
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+/* =========================================================
+   8) BADGES (Counts / Comments)
+   ========================================================= */
+.badges {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.badge.big-comment {
+  font-size: 14px;
+  padding: 6px 12px;
+}
+
+.today-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  margin-left: 8px;
+  border-radius: 999px;
+}
+
+/* =========================================================
+   9) 📱 iPHONE OPTIMIERUNG (DER WICHTIGE TEIL)
+   ========================================================= */
 @media (max-width: 430px) {
   body {
     padding-left: calc(12px + env(safe-area-inset-left));
@@ -508,14 +301,13 @@ html, body {
   }
 
   #calendar {
-    gap: 6px; /* vorher 12px -> macht extrem viel aus */
+    gap: 6px;
   }
 
   .day-btn {
     padding: 8px;
-    min-height: 72px;  /* vorher 92px */
+    min-height: 72px;
     border-radius: 18px;
-    min-width: 0;      /* wichtig bei Grid/Flex: erlaubt Shrinking */
   }
 
   .badges {
@@ -528,12 +320,27 @@ html, body {
     padding: 3px 8px;
   }
 
+  /* 📝 Kommentar kleiner */
+  .badge.big-comment {
+    font-size: 11px;
+    padding: 3px 7px;
+  }
+
+  /* ✨ Heute dezenter */
   .today-chip {
-    font-size: 10px;
+    font-size: 9px;
     padding: 2px 6px;
+    margin-left: 4px;
+    transform: translateY(-1px);
+  }
+
+  /* Datum minimal kleiner */
+  .day-btn > div:first-child {
+    font-size: 14px;
   }
 }
-    </style>
+</style>
+
   </head>
 
   <body>
