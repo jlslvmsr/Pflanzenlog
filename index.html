@@ -339,6 +339,30 @@ button:hover {
     font-size: 14px;
   }
 }
+      /* ==========================
+   Topbar Icons (User / Settings)
+   ========================== */
+.topbar-spacer {
+  flex: 1;
+}
+
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 18px;
+}
+
+@media (max-width: 430px) {
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 17px;
+  }
+}
 </style>
 
   </head>
@@ -348,19 +372,21 @@ button:hover {
 
     <div class="top-bar">
       <div class="row" style="margin-top: 0">
-        <button class="btn-water" onclick="openAction('water')">
-          💧 Gießen
-        </button>
-        <button class="btn-fert" onclick="openAction('fertilize')">
-          🧪 Düngen
-        </button>
-        <button class="btn-note" onclick="openCommentToday()">
-          📝 Kommentar (heute)
-        </button>
-        <button class="btn-ghost" onclick="openPlantOverview()">
-          🪴 Pflanzenübersicht
-        </button>
-      </div>
+  <button class="btn-water" onclick="openAction('water')">💧 Gießen</button>
+  <button class="btn-fert" onclick="openAction('fertilize')">🧪 Düngen</button>
+  <button class="btn-note" onclick="openCommentToday()">📝 Kommentar (heute)</button>
+  <button class="btn-ghost" onclick="openPlantOverview()">🪴 Pflanzenübersicht</button>
+
+  <span class="topbar-spacer"></span>
+
+  <button class="btn-ghost icon-btn" onclick="openUserMenu()" title="Login / User">
+    👤
+  </button>
+  <button class="btn-ghost icon-btn" onclick="openSettingsMenu()" title="Menü">
+    ⚙️
+  </button>
+</div>
+
       <p id="output"></p>
     </div>
 
@@ -400,35 +426,6 @@ button:hover {
 
       <div id="calendar"></div>
     </div>
-
-    <div class="bottom-bar">
-      <div class="row" style="margin-top: 0; justify-content: space-between">
-        <button class="btn-ghost" onclick="openHistory()">
-          📜 Verlauf anzeigen
-        </button>
-        <button class="btn-ghost" onclick="openPlants()">
-          🪴 Pflanzen verwalten
-        </button>
-        <button class="btn-ghost" onclick="exportLocalData()">⬇️ Backup</button>
-
-        <label
-          class="btn-ghost"
-          style="
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-          "
-        >
-          ⬆️ Import
-          <input
-            type="file"
-            accept="application/json"
-            style="display: none"
-            onchange="importLocalData(this.files[0])"
-          />
-        </label>
-      </div>
     </div>
 
     <!-- 📅 Tagesansicht (Popup) -->
@@ -681,7 +678,68 @@ button:hover {
         <button class="btn-note" onclick="savePlantNote()">Speichern</button>
       </div>
     </dialog>
-    
+    <!-- 👤 User Menü (Login / Logout) -->
+<dialog id="userMenuDialog">
+  <h2>👤 Login</h2>
+
+  <div class="row">
+    <input
+      id="emailInput2"
+      type="email"
+      placeholder="deine@email.de"
+      style="flex: 1"
+    />
+    <button class="btn-note" onclick="sendMagicLinkFromUserMenu()">
+      Magic Link senden
+    </button>
+  </div>
+
+  <div class="row" style="justify-content: space-between">
+    <span class="muted" id="authStatus2">Nicht eingeloggt</span>
+    <button class="btn-ghost" onclick="logout()">Logout</button>
+  </div>
+
+  <div class="row" style="margin-top: 12px">
+    <button class="btn-ghost" onclick="closeUserMenu()">Schließen</button>
+  </div>
+</dialog>
+
+<!-- ⚙️ Settings Menü -->
+<dialog id="settingsMenuDialog">
+  <h2>⚙️ Menü</h2>
+
+  <div class="row">
+    <button class="btn-ghost" onclick="openHistory()">📜 Verlauf anzeigen</button>
+    <button class="btn-ghost" onclick="openPlants()">🪴 Pflanzen verwalten</button>
+  </div>
+
+  <div class="row">
+    <button class="btn-ghost" onclick="exportLocalData()">⬇️ Backup export</button>
+
+    <label
+      class="btn-ghost"
+      style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;"
+    >
+      ⬆️ Import
+      <input
+        type="file"
+        accept="application/json"
+        style="display:none"
+        onchange="importLocalData(this.files[0])"
+      />
+    </label>
+  </div>
+
+  <!-- (Vorläufig) Supabase Buttons auch hier – Schutz machen wir als eigenen Schritt -->
+  <div class="row" style="margin-top: 10px">
+    <button class="btn-danger" onclick="wipeSupabaseData()">🧨 Supabase-Daten löschen</button>
+    <button class="btn-note" onclick="pushLocalToSupabase()">☁️ Lokal → Supabase</button>
+  </div>
+
+  <div class="row" style="margin-top: 12px">
+    <button class="btn-ghost" onclick="closeSettingsMenu()">Schließen</button>
+  </div>
+</dialog>
   
     
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -2860,6 +2918,58 @@ async function importLocalData(file) {
   }
 }  
       // ==========================
+// Topbar Menüs (User / Settings)
+// ==========================
+function openUserMenu() {
+  // Email vom alten Feld übernehmen (falls vorhanden)
+  const e1 = document.getElementById("emailInput")?.value || "";
+  const e2 = document.getElementById("emailInput2");
+  if (e2 && !e2.value) e2.value = e1;
+
+  // Status spiegeln
+  const s1 = document.getElementById("authStatus")?.textContent || "Nicht eingeloggt";
+  const s2 = document.getElementById("authStatus2");
+  if (s2) s2.textContent = s1;
+
+  openDialog("userMenuDialog");
+}
+function closeUserMenu() {
+  closeDialog("userMenuDialog");
+}
+
+function openSettingsMenu() {
+  openDialog("settingsMenuDialog");
+}
+function closeSettingsMenu() {
+  closeDialog("settingsMenuDialog");
+}
+
+async function sendMagicLinkFromUserMenu() {
+  // Wert aus userMenu -> in das originale Feld, damit deine bestehende Funktion weiter arbeitet
+  const e2 = (document.getElementById("emailInput2")?.value || "").trim();
+  const e1 = document.getElementById("emailInput");
+  if (e1) e1.value = e2;
+  await sendMagicLink();
+}
+
+// Auth UI: beide Labels aktuell halten
+const _oldUpdateAuthUI = updateAuthUI;
+updateAuthUI = function(session) {
+  _oldUpdateAuthUI(session);
+  const s2 = document.getElementById("authStatus2");
+  if (s2) {
+    s2.textContent = session?.user
+      ? `Eingeloggt: ${session.user.email || session.user.id}`
+      : "Nicht eingeloggt";
+  }
+};
+
+// optional: altes Auth-Card ausblenden (damit es nicht doppelt ist)
+(function hideOldAuthCard() {
+  const c = document.getElementById("authCard");
+  if (c) c.style.display = "none";
+})();
+      // ==========================
       // EXPORT FOR inline onclick=""
       // ==========================
  
@@ -2925,6 +3035,11 @@ async function importLocalData(file) {
       window.importLocalData = importLocalData;
       window.sendMagicLink = sendMagicLink;
       window.logout = logout;
+      window.openUserMenu = openUserMenu;
+window.closeUserMenu = closeUserMenu;
+window.openSettingsMenu = openSettingsMenu;
+window.closeSettingsMenu = closeSettingsMenu;
+window.sendMagicLinkFromUserMenu = sendMagicLinkFromUserMenu;
     </script>
   </body>
 </html>
