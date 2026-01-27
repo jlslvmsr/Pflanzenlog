@@ -1108,6 +1108,7 @@ const PLANT_NOTES_KEY = "pflanzenlog_plant_notes_v1";
 const ROOMS_BASE = ["Wohnzimmer", "Schlafzimmer", "Flur", "Büro"];
 const REMOVED_ROOM = "Entfernte Pflanzen";
 const ROOMS_ALL = [...ROOMS_BASE, REMOVED_ROOM];
+const GENERAL_COMMENT_KEY = "__GENERAL_DAY__";
 
 const state = {
   viewMonth: new Date(),
@@ -2558,19 +2559,27 @@ async function guardAdminOrWarn() {
       // COMMENTS (today + per day popup)
       // ==========================
       function fillCommentPlants(selectElId, includeRemoved = true) {
-        const plants = includeRemoved ? getAllPlants() : getActivePlants();
-        const sel = document.getElementById(selectElId);
-        if (!sel) return;
-        sel.innerHTML = "";
-        plants.forEach((p) => {
-          const opt = document.createElement("option");
-          opt.value = p.name;
-          const removedTag =
-            p.room === REMOVED_ROOM || p.active === false ? " • entfernt" : "";
-          opt.textContent = `${p.name} (${p.room})${removedTag}`;
-          sel.appendChild(opt);
-        });
-      }
+  const plants = includeRemoved ? getAllPlants() : getActivePlants();
+  const sel = document.getElementById(selectElId);
+  if (!sel) return;
+  sel.innerHTML = "";
+
+  // ✅ Allgemein-Option ganz oben
+  const optGeneral = document.createElement("option");
+  optGeneral.value = GENERAL_COMMENT_KEY;
+  optGeneral.textContent = "🗒️ Allgemein (Tageskommentar)";
+  sel.appendChild(optGeneral);
+
+  plants.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.name;
+    const removedTag =
+      p.room === REMOVED_ROOM || p.active === false ? " • entfernt" : "";
+    opt.textContent = `${p.name} (${p.room})${removedTag}`;
+    sel.appendChild(opt);
+  });
+}
+
 
       function saveCommentForISO(iso, plant, text, pinned) {
         const ts = isoToNoonTs(iso);
@@ -2911,13 +2920,22 @@ function clearGeneralDayNote() {
   const waterDone = new Set(agg.water.done || []);
   const fertDone = new Set(agg.fertilize.done || []);
 
-  // ✅ Kommentare pro Pflanze sammeln (pinned zuerst; agg.comments ist bereits so sortiert)
-  const commentsMap = new Map();
-  (agg.comments || []).forEach((c) => {
-    const plant = c.plant || "Unbekannt";
-    if (!commentsMap.has(plant)) commentsMap.set(plant, []);
-    commentsMap.get(plant).push(c);
-  });
+  // ✅ Kommentare trennen: Allgemein vs. pro Pflanze
+const generalComments = [];
+const commentsMap = new Map();
+
+(agg.comments || []).forEach((c) => {
+  const plant = c.plant || "Unbekannt";
+
+  if (plant === GENERAL_COMMENT_KEY) {
+    generalComments.push(c);
+    return;
+  }
+
+  if (!commentsMap.has(plant)) commentsMap.set(plant, []);
+  commentsMap.get(plant).push(c);
+});
+
 
   function statusPillsFor(name) {
     const pills = [];
@@ -2953,6 +2971,26 @@ function clearGeneralDayNote() {
   const removed = all.filter((p) => p.room === REMOVED_ROOM || p.active === false);
 
   const activeGrouped = groupPlantsByRoom(active);
+
+        // 🗒️ Allgemeine Tageskommentare ganz oben anzeigen
+if (generalComments.length) {
+  const box = document.createElement("div");
+  box.className = "comment-item";
+  box.innerHTML = `<b>🗒️ Allgemeiner Tageskommentar</b>`;
+
+  generalComments.forEach((c) => {
+    const item = document.createElement("div");
+    item.style.marginTop = "10px";
+    item.innerHTML =
+      `${c.pinned ? "<span class='pill'>📌</span> " : ""}` +
+      `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
+        c.text
+      )}</div>`;
+    box.appendChild(item);
+  });
+
+  body.appendChild(box);
+}
 
   // ✅ Aktive Pflanzen: pro Pflanze Status + Kommentare direkt darunter
   activeGrouped.forEach(([room, ps]) => {
