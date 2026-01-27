@@ -654,6 +654,25 @@ ul { margin: 8px 0 0; padding-left: 18px; }
         </button>
       </div>
 
+      <!-- 🗒️ Allgemeiner Tageskommentar (nicht an Pflanze gebunden) -->
+<div class="comment-item" style="margin-top: 12px">
+  <b>🗒️ Allgemeiner Tageskommentar</b>
+  <div class="muted" style="margin-top: 6px">
+    Gilt für diesen Tag – unabhängig von einer Pflanze.
+  </div>
+
+  <textarea
+    id="dayGeneralNoteText"
+    placeholder="z. B. Heute viele Trauermücken gesehen / Erde sehr trocken / Urlaub – nur checken…"
+    style="margin-top: 8px"
+  ></textarea>
+
+  <div class="row" style="margin-top: 8px">
+    <button class="btn-danger" onclick="clearGeneralDayNote()">🗑️ Löschen</button>
+    <button class="btn-note" onclick="saveGeneralDayNote()">Speichern</button>
+  </div>
+</div>
+      
       <div id="dayViewBody"></div>
 
       <div class="comment-item" style="margin-top: 12px">
@@ -2603,6 +2622,73 @@ async function guardAdminOrWarn() {
         renderAll();
       }
 
+      /* =========================================================
+   Allgemeiner Tageskommentar (pro Datum, ohne Pflanze)
+   Entry-Typ: { type:"day_note", id, iso, ts, text }
+   ========================================================= */
+
+function getGeneralDayNoteISO(iso) {
+  const entries = loadEntries();
+  const found = (entries || []).find((e) => e && e.type === "day_note" && e.iso === iso);
+  return found ? String(found.text || "") : "";
+}
+
+function saveGeneralDayNote() {
+  const iso = state.selectedISO || isoDate(new Date());
+  const ta = document.getElementById("dayGeneralNoteText");
+  const text = String(ta?.value || "").trim();
+
+  if (!text) {
+    out("Bitte einen Text eingeben 🙂");
+    return;
+  }
+
+  const entries = loadEntries();
+  const ts = isoToNoonTs(iso);
+
+  // Wenn es für den Tag schon einen gibt: ersetzen, sonst neu anlegen
+  const idx = (entries || []).findIndex((e) => e && e.type === "day_note" && e.iso === iso);
+
+  const obj = {
+    type: "day_note",
+    id: idx >= 0 ? entries[idx].id : uuid(),
+    iso,
+    ts,
+    text,
+  };
+
+  if (idx >= 0) entries[idx] = obj;
+  else entries.unshift(obj);
+
+  saveEntries(entries);
+
+  out("🗒️ Tageskommentar gespeichert ✅");
+  renderAll();
+  renderDayViewPopup();
+}
+
+function clearGeneralDayNote() {
+  const iso = state.selectedISO || isoDate(new Date());
+
+  const entries = loadEntries();
+  const before = entries.length;
+  const next = entries.filter((e) => !(e && e.type === "day_note" && e.iso === iso));
+
+  if (next.length === before) {
+    out("Kein Tageskommentar vorhanden.");
+    return;
+  }
+
+  saveEntries(next);
+
+  const ta = document.getElementById("dayGeneralNoteText");
+  if (ta) ta.value = "";
+
+  out("🗑️ Tageskommentar gelöscht.");
+  renderAll();
+  renderDayViewPopup();
+}
+
       // ==========================
       // DAY COMMENTS POPUP (badge)
       // ==========================
@@ -2797,6 +2883,10 @@ async function guardAdminOrWarn() {
         if (ta) ta.value = "";
         if (pin) pin.checked = false;
 
+        // 🗒️ Allgemeiner Tageskommentar vorbefüllen
+        const g = document.getElementById("dayGeneralNoteText");
+        if (g) g.value = getGeneralDayNoteISO(iso);
+        
         renderDayViewPopup();
         openDialog("dayViewDialog");
       }
@@ -3309,10 +3399,12 @@ updateAuthUI = function(session) {
       window.sendMagicLink = sendMagicLink;
       window.logout = logout;
       window.openUserMenu = openUserMenu;
-window.closeUserMenu = closeUserMenu;
-window.openSettingsMenu = openSettingsMenu;
-window.closeSettingsMenu = closeSettingsMenu;
-window.sendMagicLinkFromUserMenu = sendMagicLinkFromUserMenu;
+      window.closeUserMenu = closeUserMenu;
+      window.openSettingsMenu = openSettingsMenu;
+      window.closeSettingsMenu = closeSettingsMenu;
+      window.sendMagicLinkFromUserMenu = sendMagicLinkFromUserMenu;
+      window.saveGeneralDayNote = saveGeneralDayNote;
+      window.clearGeneralDayNote = clearGeneralDayNote;
     </script>
   </body>
 </html>
