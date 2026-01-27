@@ -859,16 +859,18 @@ ul { margin: 8px 0 0; padding-left: 18px; }
     </dialog>
 
     <!-- 🪴 Pflanzenübersicht -->
-    <dialog id="plantOverviewDialog">
-      <h2>🪴 Pflanzenübersicht</h2>
-      <div id="plantOverviewList"></div>
+<dialog id="plantOverviewDialog">
+  <div class="row" style="margin-top: 0; justify-content: space-between;">
+    <h2 style="margin: 0;">🪴 Pflanzenübersicht</h2>
+    <button class="btn-ghost" onclick="openPlantsFromOverview()">🛠 Pflanzen verwalten</button>
+  </div>
 
-      <div class="row" style="margin-top: 12px">
-        <button class="btn-ghost" onclick="closePlantOverview()">
-          Schließen
-        </button>
-      </div>
-    </dialog>
+  <div id="plantOverviewList" style="margin-top: 12px;"></div>
+
+  <div class="row" style="margin-top: 12px">
+    <button class="btn-ghost" onclick="closePlantOverview()">Schließen</button>
+  </div>
+</dialog>
 
     <!-- 📝 Pflanzenkommentar (tagesunabhängig) -->
     <dialog id="plantNoteDialog">
@@ -2317,6 +2319,10 @@ async function guardAdminOrWarn() {
           wrap.appendChild(card);
         });
       }
+      function openPlantsFromOverview() {
+  closeDialog("plantOverviewDialog"); // erst Overview zu, sonst Dialog-in-Dialog Stress
+  openPlants();                       // öffnet Pflanzen verwalten
+}
 
       // ==========================
       // HISTORY DIALOG
@@ -3352,6 +3358,7 @@ updateAuthUI = function(session) {
       window.openSettingsMenu = openSettingsMenu;
       window.closeSettingsMenu = closeSettingsMenu;
       window.sendMagicLinkFromUserMenu = sendMagicLinkFromUserMenu;
+      window.openPlantsFromOverview = openPlantsFromOverview;
       
     </script>
   </body>
