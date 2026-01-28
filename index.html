@@ -1086,6 +1086,38 @@ const STORAGE_KEY = "pflanzenlog_entries_v12";
 const PLANTS_KEY = "pflanzenlog_plants_v3_rooms_active";
 const PLANT_NOTES_KEY = "pflanzenlog_plant_notes_v1";
 
+    /* =========================================================
+   QUEUE / AUTO-SYNC: Dirty Flags + Cloud Mode
+   ========================================================= */
+
+const DIRTY_ENTRIES_KEY = "pflanzenlog_dirty_entries_v1";
+const DIRTY_PLANTS_KEY  = "pflanzenlog_dirty_plants_v1";
+const DIRTY_NOTES_KEY   = "pflanzenlog_dirty_notes_v1";
+
+function setDirty(key, val) {
+  try { localStorage.setItem(key, val ? "1" : "0"); } catch {}
+}
+function isDirty(key) {
+  try { return localStorage.getItem(key) === "1"; } catch { return false; }
+}
+function clearDirty(key) {
+  try { localStorage.removeItem(key); } catch {}
+}
+
+function markDirtyEntries() { setDirty(DIRTY_ENTRIES_KEY, true); }
+function markDirtyPlants()  { setDirty(DIRTY_PLANTS_KEY, true); }
+function markDirtyNotes()   { setDirty(DIRTY_NOTES_KEY, true); }
+
+function clearDirtyEntries(){ clearDirty(DIRTY_ENTRIES_KEY); }
+function clearDirtyPlants() { clearDirty(DIRTY_PLANTS_KEY); }
+function clearDirtyNotes()  { clearDirty(DIRTY_NOTES_KEY); }
+
+async function isCloudMode() {
+  if (!supabaseClient) return false;
+  const session = await getSessionSafe().catch(() => null);
+  return !!session;
+}
+
 /* =========================================================
    3) Rooms / State
    ========================================================= */
@@ -1199,6 +1231,37 @@ function isoToNoonTs(iso) {
 }
 
 /* =========================================================
+   QUEUE STATUS HINT (UI)
+   ========================================================= */
+async function updateQueueStatusHint() {
+  const cloud = await isCloudMode();
+
+  const dirty =
+    isDirty(DIRTY_ENTRIES_KEY) ||
+    isDirty(DIRTY_PLANTS_KEY) ||
+    isDirty(DIRTY_NOTES_KEY);
+
+  if (!cloud && dirty) {
+    out("🟡 Lokal gespeichert – wird nach Login synchronisiert.");
+    return;
+  }
+
+  if (!cloud && !dirty) {
+    out("📱 Lokalmodus – keine Cloud-Synchronisation aktiv.");
+    return;
+  }
+
+  if (cloud && dirty) {
+    out("⏳ Änderungen werden synchronisiert …");
+    return;
+  }
+
+  if (cloud && !dirty) {
+    out("☁️ Alles synchronisiert.");
+  }
+}
+    
+/* =========================================================
    5) Local Cache (Entries / Plants / Notes)
    ========================================================= */
 function loadEntriesFromLocal() {
@@ -1300,8 +1363,15 @@ function loadEntries() {
 let syncTimerEntries = null;
 function saveEntries(entries) {
   saveEntriesToLocal(entries);
-  scheduleEntriesSync(entries);
+  markDirtyEntries(); // ✅ queued: es gibt lokale Änderungen
+
+  // ✅ Nur syncen, wenn wirklich Cloud-Mode (eingeloggt)
+  isCloudMode().then((cloud) => {
+    if (cloud) scheduleEntriesSync(entries);
+    updateQueueStatusHint();
+  });
 }
+
 function scheduleEntriesSync(entries) {
   if (syncTimerEntries) clearTimeout(syncTimerEntries);
   syncTimerEntries = setTimeout(async () => {
@@ -1328,8 +1398,14 @@ function loadPlants() {
 let syncTimerPlants = null;
 function savePlants(plants) {
   savePlantsToLocal(plants || []);
-  schedulePlantsSync(plants || []);
+  markDirtyPlants(); // ✅ queued
+
+  isCloudMode().then((cloud) => {
+    if (cloud) schedulePlantsSync(plants || []);
+    updateQueueStatusHint();
+  });
 }
+
 function schedulePlantsSync(plants) {
   if (syncTimerPlants) clearTimeout(syncTimerPlants);
   syncTimerPlants = setTimeout(async () => {
@@ -1355,8 +1431,14 @@ function loadPlantNotes() {
 let syncTimerNotes = null;
 function savePlantNotes(map) {
   saveNotesToLocal(map || {});
-  scheduleNotesSync(map || {});
+  markDirtyNotes(); // ✅ queued
+
+  isCloudMode().then((cloud) => {
+    if (cloud) scheduleNotesSync(map || {});
+    updateQueueStatusHint();
+  });
 }
+
 function scheduleNotesSync(map) {
   if (syncTimerNotes) clearTimeout(syncTimerNotes);
   syncTimerNotes = setTimeout(async () => {
@@ -1457,6 +1539,61 @@ async function getSessionSafe() {
 }
 
 /* =========================================================
+   AUTO-SYNC: Local -> Supabase wenn dirty
+   ========================================================= */
+async function autoSyncAllIfDirty() {
+  if (!supabaseClient) return;
+
+  const session = await getSessionSafe().catch(() => null);
+  if (!session) return;
+
+  const dirtyEntries = isDirty(DIRTY_ENTRIES_KEY);
+  const dirtyPlants  = isDirty(DIRTY_PLANTS_KEY);
+  const dirtyNotes   = isDirty(DIRTY_NOTES_KEY);
+
+  if (!dirtyEntries && !dirtyPlants && !dirtyNotes) {
+    console.log("🟢 AutoSync: nichts dirty");
+    return;
+  }
+
+  out("☁️ Sync (Queue) …");
+  console.log("☁️ AutoSync startet:", { dirtyEntries, dirtyPlants, dirtyNotes });
+
+  try {
+    // Reihenfolge: Plants -> Notes -> Entries (macht Sinn fürs UI)
+    if (dirtyPlants) {
+      const plants = loadPlantsFromLocal();
+      await sbReplaceAll("plants", plants, () => Date.now());
+      clearDirtyPlants();
+      updateQueueStatusHint();
+      console.log("✅ AutoSync plants done");
+    }
+
+    if (dirtyNotes) {
+      const notes = loadNotesFromLocal();
+      await sbReplaceAll("plant_notes", [notes], () => Date.now());
+      clearDirtyNotes();
+      updateQueueStatusHint();
+      console.log("✅ AutoSync notes done");
+    }
+
+    if (dirtyEntries) {
+      const entries = loadEntriesFromLocal();
+      await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
+      clearDirtyEntries();
+      updateQueueStatusHint();
+      console.log("✅ AutoSync entries done");
+    }
+
+    out("✅ Queue Sync fertig");
+  } catch (e) {
+    console.error("❌ AutoSync Fehler:", e);
+    out("❌ AutoSync fehlgeschlagen: " + (e?.message || e));
+    // dirty bleibt bewusst gesetzt -> nächster Login/Reload versucht es erneut
+  }
+}
+    
+/* =========================================================
    9) INIT: FAST remote load (parallel) + NO auto-upload on start
    ========================================================= */
 async function initFromSupabase_FAST() {
@@ -1515,9 +1652,10 @@ async function initApp() {
     updateAdminUI();
 
     if (!session) {
-      console.log("🔒 Kein Login -> local Cache");
-      out("🔒 Bitte einloggen (Magic Link), um iPhone/iPad Sync zu nutzen.");
-      if (typeof renderAll === "function") renderAll();
+  console.log("🔒 Kein Login -> local-only Mode");
+  out("🔒 Lokalmodus (nicht eingeloggt). Änderungen werden nach Login synchronisiert.");
+  if (typeof renderAll === "function") renderAll();
+  return;
       console.log("✅ initApp fertig (local)");
       return;
     }
@@ -1558,23 +1696,27 @@ if (supabaseClient) {
     updateAuthUI(session);
 
     if (event === "SIGNED_IN") {
-      try {
-        out("✅ Login erkannt. Zeige lokale Daten…");
-        renderAll();
+  try {
+    out("✅ Login erkannt. Lade Daten…");
 
-        out("☁️ Lade Supabase…");
-        await initFromSupabase_FAST();
-        renderAll();
+    // 1) Erst remote ziehen (damit du aktuelle Cloud-Daten siehst)
+    await initFromSupabase();
 
-        out("✅ Sync bereit (iPhone/iPad)");
-      } catch (e) {
-        console.error("❌ After-login load error:", e);
-        out("❌ Load Fehler nach Login: " + (e?.message || e));
-      }
-    }
+    // 2) Dann queued local Änderungen pushen (Local gewinnt)
+    await autoSyncAllIfDirty();
+updateQueueStatusHint();
+    if (typeof renderAll === "function") renderAll();
+    out("✅ Sync bereit (iPhone/iPad)");
+  } catch (e) {
+    console.error("❌ After-login load/sync error:", e);
+    out("❌ Fehler nach Login: " + (e?.message || e));
+  }
+}
+
 
     if (event === "SIGNED_OUT") {
       out("👋 Ausgeloggt. Zeige lokale Daten.");
+      updateQueueStatusHint();
       if (typeof renderAll === "function") renderAll();
     }
   });
@@ -1585,6 +1727,7 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initApp);
 } else {
   initApp();
+  updateQueueStatusHint();
 }
 
 /* =========================================================
