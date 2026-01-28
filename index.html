@@ -1349,12 +1349,21 @@ const { error: delErr } = await promiseTimeout(delPromise, 12000, `${table}.dele
 
   const CHUNK = 200;
   for (let i = 0; i < rows.length; i += CHUNK) {
-    const slice = rows.slice(i, i + CHUNK);
-    const { error const insPromise = supabaseClient.from(table).insert(slice);
-const { error } = await promiseTimeout(insPromise, 12000, `${table}.insert`);
- = await supabaseClient.from(table).insert(slice);
-    if (error) throw error;
-  }
+  const slice = rows.slice(i, i + CHUNK);
+
+  const insPromise = supabaseClient
+    .from(table)
+    .insert(slice);
+
+  const { error } = await promiseTimeout(
+    insPromise,
+    12000,
+    `${table}.insert`
+  );
+
+  if (error) throw error;
+}
+
 
   console.log(`✅ [${table}] Sync abgeschlossen (${rows.length} rows)`);
 }
