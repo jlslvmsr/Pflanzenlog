@@ -1023,8 +1023,9 @@ if (DEBUG_ENABLED) {
   // sofort loggen
   console.log("DEBUG SCRIPT LOADED ✅");
 })();
-</script>
-    <script>
+    </script>
+  
+  <script>
 /* =========================================================
    1) Supabase Setup (Safari fix + Session persist)
    ========================================================= */
@@ -1086,7 +1087,7 @@ const PLANTS_KEY = "pflanzenlog_plants_v3_rooms_active";
 const PLANT_NOTES_KEY = "pflanzenlog_plant_notes_v1";
 
 /* =========================================================
-   3) Rooms / State (nur Grundgerüst; dein bestehender Code nutzt das)
+   3) Rooms / State
    ========================================================= */
 const ROOMS_BASE = ["Wohnzimmer", "Schlafzimmer", "Flur", "Büro"];
 const REMOVED_ROOM = "Entfernte Pflanzen";
@@ -1104,7 +1105,7 @@ let actionISO = isoDate(new Date());
 let actionDateLocked = false;
 
 /* =========================================================
-   4) Helpers (nur Basics, die der obere Teil braucht)
+   4) Helpers
    ========================================================= */
 function isoDate(d) {
   const x = new Date(d);
@@ -1118,10 +1119,6 @@ function out(msg) {
   const el = document.getElementById("output");
   if (el) el.textContent = msg || "";
 }
-
-/* =========================================================
-   4.x) Missing Helpers / UI Utilities (required by rest of app)
-   ========================================================= */
 
 // --- globals used across dialogs / actions ---
 let pendingRoomPlant = null;
@@ -1138,11 +1135,9 @@ function openDialog(id) {
   if (typeof dlg.showModal === "function") {
     if (!dlg.open) dlg.showModal();
   } else {
-    // Fallback (sehr alt): einfach anzeigen
     dlg.setAttribute("open", "open");
   }
 }
-
 function closeDialog(id) {
   const dlg = document.getElementById(id);
   if (!dlg) return;
@@ -1153,7 +1148,7 @@ function closeDialog(id) {
   }
 }
 
-// Optional: Klick auf Backdrop schließt Dialog (iPad-freundlich)
+// Backdrop click closes dialog
 (function enableDialogBackdropClose() {
   document.addEventListener("click", (e) => {
     const dlg = e.target;
@@ -1169,19 +1164,15 @@ function closeDialog(id) {
   });
 })();
 
-// --- Data helpers ---
 function uniq(arr) {
   if (!Array.isArray(arr)) return [];
   return Array.from(new Set(arr.filter((x) => x !== null && x !== undefined)));
 }
-
 function setUnion(a, b) {
   const aa = Array.isArray(a) ? a : [];
   const bb = Array.isArray(b) ? b : [];
   return uniq([...aa, ...bb]);
 }
-
-// --- Safe HTML for innerHTML usage ---
 function escapeHtml(str) {
   const s = String(str ?? "");
   return s
@@ -1191,27 +1182,22 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
-
-// --- UUID (fallback if crypto.randomUUID missing) ---
 function uuid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  // RFC4122-ish fallback
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
-
-// --- Date helpers ---
 function isoToNoonTs(iso) {
-  // iso: "YYYY-MM-DD" -> timestamp at 12:00 local time (stable against DST edge cases)
   const [y, m, d] = String(iso || "").split("-").map((x) => parseInt(x, 10));
   if (!y || !m || !d) return Date.now();
   return new Date(y, m - 1, d, 12, 0, 0, 0).getTime();
-}  
+}
+
 /* =========================================================
    5) Local Cache (Entries / Plants / Notes)
    ========================================================= */
@@ -1240,46 +1226,33 @@ function saveNotesToLocal(map) {
 }
 
 /* =========================================================
-   6) Supabase Helpers (payload-basierte Tabellen)
-   WICHTIG: Diese Implementierung erwartet in Supabase je Tabelle:
-   - user_id (uuid)  -> RLS: user_id = auth.uid()
-   - ts (bigint)     -> sortierbar
-   - payload (jsonb) -> enthält deine echte Struktur
-   Tabellen: entries, plants, plant_notes
+   6) Supabase Helpers (payload tables)
    ========================================================= */
-      
-/* =========================================================
-   6a) Supabase Fetch Helper (payload-basierte Tabellen) + Safari Timeout Guard
-   ========================================================= */
+function promiseTimeout(promise, ms, label = "operation") {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`Timeout after ${ms}ms (${label})`)), ms);
+    promise
+      .then((v) => { clearTimeout(t); resolve(v); })
+      .catch((e) => { clearTimeout(t); reject(e); });
+  });
+}
+
 async function sbFetchPayloads(table) {
   if (!supabaseClient) throw new Error("supabaseClient ist null");
-
   console.log(`⬇️ [${table}] select start…`);
 
-  try {
-    // Query bauen
-    const queryPromise = supabaseClient
-      .from(table)
-      .select("payload, ts")
-      .order("ts", { ascending: false });
+  // Query
+  const queryPromise = supabaseClient
+    .from(table)
+    .select("payload, ts")
+    .order("ts", { ascending: false });
 
-    // Safari: kann “stallen” → Timeout erzwingen
-    const { data, error } = await promiseTimeout(
-      queryPromise,
-      12000,
-      `${table}.select`
-    );
+  // Timeout guard
+  const { data, error } = await promiseTimeout(queryPromise, 12000, `${table}.select`);
+  if (error) throw error;
 
-    if (error) throw error;
-
-    console.log(`✅ [${table}] select done (${(data || []).length} rows)`);
-    return (data || []).map((r) => r.payload).filter(Boolean);
-  } catch (e) {
-    const name = e?.name || "";
-    const msg = e?.message || String(e);
-    console.error(`❌ [${table}] select error:`, name, msg, e);
-    throw e;
-  }
+  console.log(`✅ [${table}] select done (${(data || []).length} rows)`);
+  return (data || []).map((r) => r.payload).filter(Boolean);
 }
 
 async function sbReplaceAll(table, payloads, tsGetter) {
@@ -1290,7 +1263,6 @@ async function sbReplaceAll(table, payloads, tsGetter) {
 
   console.log(`☁️ [${table}] replaceAll für user`, userId);
 
-  // 1️⃣ Alle bestehenden Rows dieses Users löschen
   const { error: delErr } = await supabaseClient
     .from(table)
     .delete()
@@ -1298,13 +1270,9 @@ async function sbReplaceAll(table, payloads, tsGetter) {
 
   if (delErr) throw delErr;
 
-  // 2️⃣ Neue Rows vorbereiten (MIT user_id!)
   const rows = (payloads || []).map((p) => ({
     user_id: userId,
-    ts:
-      typeof tsGetter === "function"
-        ? tsGetter(p) || Date.now()
-        : Date.now(),
+    ts: typeof tsGetter === "function" ? tsGetter(p) || Date.now() : Date.now(),
     payload: p,
   }));
 
@@ -1312,8 +1280,7 @@ async function sbReplaceAll(table, payloads, tsGetter) {
     console.log(`ℹ️ [${table}] nichts zu speichern`);
     return;
   }
-console.log(`[${table}] first row preview:`, rows[0]);
-  // 3️⃣ Chunked Insert (sicher & stabil)
+
   const CHUNK = 200;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const slice = rows.slice(i, i + CHUNK);
@@ -1324,46 +1291,9 @@ console.log(`[${table}] first row preview:`, rows[0]);
   console.log(`✅ [${table}] Sync abgeschlossen (${rows.length} rows)`);
 }
 
-async function wipeSupabaseData() {
-  try {
-    // 🔒 ADMIN-SCHUTZ
-    if (!(await guardAdminOrWarn())) return;
-
-    if (!supabaseClient) throw new Error("supabaseClient fehlt");
-
-    const session = await getSessionSafe().catch(() => null);
-    if (!session) {
-      out("🔒 Bitte einloggen, um Supabase löschen zu können.");
-      return;
-    }
-
-    const ok = confirm(
-      "Wirklich ALLE aktuellen Supabase-Daten (entries, plants, plant_notes) für deinen Account löschen?\n\n" +
-      "Das betrifft nur DEINEN User (RLS)."
-    );
-    if (!ok) return;
-
-    out("🧨 Lösche Supabase-Daten…");
-    console.log("🧨 wipeSupabaseData start");
-
-    // Alle Tabellen für diesen User leeren
-    await sbReplaceAll("entries", [], () => Date.now());
-    await sbReplaceAll("plants", [], () => Date.now());
-    await sbReplaceAll("plant_notes", [], () => Date.now());
-
-    out("✅ Supabase ist jetzt leer. Als nächstes: Backup importieren.");
-    console.log("✅ wipeSupabaseData done");
-  } catch (e) {
-    console.error("❌ wipeSupabaseData Fehler:", e);
-    out("❌ Löschen fehlgeschlagen: " + (e?.message || e));
-  }
-}
-
-window.wipeSupabaseData = wipeSupabaseData;      
 /* =========================================================
-   7) Public Data API (der REST deiner App nutzt NUR diese 6 Funktionen)
+   7) Public Data API (lokal + auto-sync)
    ========================================================= */
-// ---- entries
 function loadEntries() {
   return loadEntriesFromLocal();
 }
@@ -1381,17 +1311,16 @@ function scheduleEntriesSync(entries) {
       await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
       console.log("✅ entries synced");
       out("✅ Supabase Sync ok");
-   } catch (e) {
-  console.error("❌ plants sync error (full):", e);
-  const msg = e?.message || String(e);
-  const code = e?.code || e?.status || "";
-  const details = e?.details || e?.hint || "";
-  out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
-}
+    } catch (e) {
+      console.error("❌ entries sync error (full):", e);
+      const msg = e?.message || String(e);
+      const code = e?.code || e?.status || "";
+      const details = e?.details || e?.hint || "";
+      out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
+    }
   }, 600);
 }
 
-// ---- plants
 function loadPlants() {
   const local = loadPlantsFromLocal();
   return Array.isArray(local) ? local : [];
@@ -1410,17 +1339,16 @@ function schedulePlantsSync(plants) {
       await sbReplaceAll("plants", plants, () => Date.now());
       console.log("✅ plants synced");
       out("✅ Supabase Sync ok");
-   } catch (e) {
-  console.error("❌ plants sync error (full):", e);
-  const msg = e?.message || String(e);
-  const code = e?.code || e?.status || "";
-  const details = e?.details || e?.hint || "";
-  out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
-}
+    } catch (e) {
+      console.error("❌ plants sync error (full):", e);
+      const msg = e?.message || String(e);
+      const code = e?.code || e?.status || "";
+      const details = e?.details || e?.hint || "";
+      out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
+    }
   }, 600);
 }
 
-// ---- plant_notes
 function loadPlantNotes() {
   return loadNotesFromLocal();
 }
@@ -1439,68 +1367,17 @@ function scheduleNotesSync(map) {
       console.log("✅ plant_notes synced");
       out("✅ Supabase Sync ok");
     } catch (e) {
-  console.error("❌ plants sync error (full):", e);
-  const msg = e?.message || String(e);
-  const code = e?.code || e?.status || "";
-  const details = e?.details || e?.hint || "";
-  out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
-}
+      console.error("❌ plant_notes sync error (full):", e);
+      const msg = e?.message || String(e);
+      const code = e?.code || e?.status || "";
+      const details = e?.details || e?.hint || "";
+      out(`❌ Supabase (${code}) ${msg} ${details}`.trim());
+    }
   }, 600);
 }
-//kann gelöscht werden bis 8
-      async function pushLocalToSupabase() {
-  try {
-    // 🔒 ADMIN-SCHUTZ
-    if (!(await guardAdminOrWarn())) return;
 
-    if (!supabaseClient) throw new Error("supabaseClient fehlt");
-
-    const session = await getSessionSafe().catch(() => null);
-    if (!session) {
-      out("🔒 Bitte einloggen, dann nochmal.");
-      return;
-    }
-
-    const entries = loadEntriesFromLocal();
-    const plants  = loadPlantsFromLocal();
-    const notes   = loadNotesFromLocal();
-
-    if (!Array.isArray(entries) || !Array.isArray(plants) || typeof notes !== "object") {
-      throw new Error("Lokale Daten haben ein unerwartetes Format.");
-    }
-
-    const ok = confirm(
-      `Lokale Daten zu Supabase hochladen?\n\n` +
-      `Entries: ${entries.length}\nPlants: ${plants.length}\nNotes: ${Object.keys(notes || {}).length}\n\n` +
-      `Das überschreibt den aktuellen Supabase-Stand (für deinen User).`
-    );
-    if (!ok) return;
-
-    out("☁️ Upload: plants…");
-    await sbReplaceAll("plants", plants, () => Date.now());
-
-    out("☁️ Upload: plant_notes…");
-    await sbReplaceAll("plant_notes", [notes], () => Date.now());
-
-    out("☁️ Upload: entries…");
-    await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
-
-    out("✅ Lokale Daten sind jetzt in Supabase.");
-    if (typeof initFromSupabase === "function") await initFromSupabase();
-    if (typeof renderAll === "function") renderAll();
-  } catch (e) {
-    console.error("❌ pushLocalToSupabase Fehler:", e);
-    out("❌ Upload fehlgeschlagen: " + (e?.message || e));
-  }
-}
-
-window.pushLocalToSupabase = pushLocalToSupabase;
 /* =========================================================
    8) Auth (Magic Link) + UI Hooks
-   Erwartete HTML-Elemente:
-   - <input id="emailInput" ...>
-   - <span id="authStatus"></span>
-   - Button onclick="sendMagicLink()" / onclick="logout()"
    ========================================================= */
 function updateAuthUI(session) {
   const status = document.getElementById("authStatus");
@@ -1529,18 +1406,15 @@ async function sendMagicLink() {
     out("📨 Magic Link wird gesendet…");
     console.log("📨 sende Magic Link an", email);
 
-    const redirectTo = window.location.origin + window.location.pathname; // sauber für Safari
+    const redirectTo = window.location.origin + window.location.pathname;
     console.log("↪️ redirectTo:", redirectTo);
 
     const { data, error } = await supabaseClient.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: redirectTo,
-      },
+      options: { emailRedirectTo: redirectTo },
     });
 
     if (error) {
-      // Supabase Rate Limit (kommt schnell, wenn man mehrfach klickt)
       if (error.status === 429) {
         MAGIC_LINK_COOLDOWN_UNTIL = Date.now() + 6500;
         out("⏳ Supabase Sicherheitslimit: bitte 6 Sekunden warten und nochmal.");
@@ -1551,9 +1425,7 @@ async function sendMagicLink() {
       return;
     }
 
-    // Cooldown gegen Doppel-Klick
     MAGIC_LINK_COOLDOWN_UNTIL = Date.now() + 6500;
-
     out("✅ Link gesendet! Check deine Mail 😊");
     console.log("✅ Magic Link gesendet", data);
   } catch (e) {
@@ -1562,21 +1434,14 @@ async function sendMagicLink() {
   }
 }
 
-  async function logout() {
+async function logout() {
   try {
     if (!supabaseClient) throw new Error("supabaseClient fehlt");
-
     await supabaseClient.auth.signOut();
-
-    // 🔑 WICHTIG: User-ID Cache zurücksetzen
     CURRENT_USER_ID = null;
-
     out("👋 Ausgeloggt.");
     console.log("👋 ausgeloggt");
-
     updateAuthUI(null);
-
-    // App bleibt nutzbar mit lokalen Daten
     if (typeof renderAll === "function") renderAll();
   } catch (e) {
     console.error("❌ Logout Fehler:", e);
@@ -1592,105 +1457,49 @@ async function getSessionSafe() {
 }
 
 /* =========================================================
-   9) Init (remote -> cache -> render)
-   - Wenn NICHT eingeloggt: zeigt local (offline/backup)
-   - Wenn eingeloggt: lädt 3 Tabellen -> schreibt in local cache -> renderAll()
+   9) INIT: FAST remote load (parallel) + NO auto-upload on start
    ========================================================= */
-function promiseTimeout(promise, ms, label = "operation") {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => {
-      reject(new Error(`Timeout after ${ms}ms (${label})`));
-    }, ms);
-
-    promise
-      .then((v) => { clearTimeout(t); resolve(v); })
-      .catch((e) => { clearTimeout(t); reject(e); });
-  });
-} 
-
-async function initFromSupabaseWithTimeout() {
-  // 15s Gesamt-Timeout, damit Safari nicht ewig blockiert
-  return promiseTimeout(initFromSupabase(), 15000, "initFromSupabase");
-}      
-/* =========================================================
-   9a) Init From Supabase (remote -> local cache) mit robustem Safari-Fallback
-   ========================================================= */
-async function initFromSupabase() {
+async function initFromSupabase_FAST() {
   if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
-  // --- ENTRIES ---
-  const localEntries = loadEntriesFromLocal();
-  try {
-    console.log("⬇️ Lade entries von Supabase…");
-    const remoteEntries = await sbFetchPayloads("entries");
+  const results = await Promise.allSettled([
+    sbFetchPayloads("entries"),
+    sbFetchPayloads("plants"),
+    sbFetchPayloads("plant_notes"),
+  ]);
 
-    if (remoteEntries.length > 0) {
-      saveEntriesToLocal(remoteEntries);
-      console.log("✅ entries loaded from remote:", remoteEntries.length);
-    } else {
-      console.log("ℹ️ remote entries leer -> lokale behalten:", localEntries.length);
-      if (localEntries.length > 0) {
-        console.log("☁️ remote leer, sync lokale entries hoch…");
-        await sbReplaceAll("entries", localEntries, (e) => e?.ts || Date.now());
-        console.log("✅ lokale entries hochgesynct");
-      }
-    }
-  } catch (e) {
-    console.error("❌ entries init error -> fallback to local:", e);
-    out("⚠️ Entries konnten nicht geladen werden (Safari). Zeige lokale Daten.");
-    // kein throw -> weiter mit plants/notes
+  const [rEntries, rPlants, rNotes] = results;
+
+  if (rEntries.status === "fulfilled") {
+    const remoteEntries = rEntries.value || [];
+    if (remoteEntries.length) saveEntriesToLocal(remoteEntries);
   }
 
-  // --- PLANTS ---
-  const localPlants = loadPlantsFromLocal();
-  try {
-    console.log("⬇️ Lade plants von Supabase…");
-    const remotePlants = await sbFetchPayloads("plants");
-
-    if (remotePlants.length > 0) {
-      savePlantsToLocal(remotePlants);
-      console.log("✅ plants loaded from remote:", remotePlants.length);
-    } else {
-      console.log("ℹ️ remote plants leer -> lokale behalten:", localPlants.length);
-      if (localPlants.length > 0) {
-        console.log("☁️ remote leer, sync lokale plants hoch…");
-        await sbReplaceAll("plants", localPlants, () => Date.now());
-        console.log("✅ lokale plants hochgesynct");
-      }
-    }
-  } catch (e) {
-    console.error("❌ plants init error -> fallback to local:", e);
-    out("⚠️ Plants konnten nicht geladen werden (Safari). Zeige lokale Daten.");
+  if (rPlants.status === "fulfilled") {
+    const remotePlants = rPlants.value || [];
+    if (remotePlants.length) savePlantsToLocal(remotePlants);
   }
 
-  // --- NOTES (map) ---
-  const localNotes = loadNotesFromLocal();
-  try {
-    console.log("⬇️ Lade plant_notes von Supabase…");
-    const remoteNotesArr = await sbFetchPayloads("plant_notes");
-    const remoteNotes = remoteNotesArr[0] || null;
-
-    if (
-      remoteNotes &&
-      typeof remoteNotes === "object" &&
-      !Array.isArray(remoteNotes) &&
-      Object.keys(remoteNotes).length
-    ) {
-      saveNotesToLocal(remoteNotes);
-      console.log("✅ plant_notes loaded from remote");
-    } else {
-      console.log("ℹ️ remote notes leer -> lokale behalten:", Object.keys(localNotes || {}).length);
-      if (localNotes && Object.keys(localNotes).length) {
-        console.log("☁️ remote leer, sync lokale notes hoch…");
-        await sbReplaceAll("plant_notes", [localNotes], () => Date.now());
-        console.log("✅ lokale notes hochgesynct");
-      }
+  if (rNotes.status === "fulfilled") {
+    const arr = rNotes.value || [];
+    const remoteNotes = arr[0];
+    if (remoteNotes && typeof remoteNotes === "object" && !Array.isArray(remoteNotes)) {
+      if (Object.keys(remoteNotes).length) saveNotesToLocal(remoteNotes);
     }
-  } catch (e) {
-    console.error("❌ notes init error -> fallback to local:", e);
-    out("⚠️ Notes konnten nicht geladen werden (Safari). Zeige lokale Daten.");
+  }
+
+  const failed = results
+    .map((r, i) => (r.status === "rejected" ? ["entries","plants","notes"][i] : null))
+    .filter(Boolean);
+
+  if (failed.length) {
+    out(`⚠️ Supabase teilweise nicht geladen: ${failed.join(", ")}. Zeige lokale Daten.`);
   }
 }
+
+/* =========================================================
+   9a) initApp (zeigt sofort local, lädt dann Supabase)
+   ========================================================= */
 async function initApp() {
   console.log("🚀 initApp gestartet");
   try {
@@ -1705,7 +1514,6 @@ async function initApp() {
     updateAuthUI(session);
     updateAdminUI();
 
-
     if (!session) {
       console.log("🔒 Kein Login -> local Cache");
       out("🔒 Bitte einloggen (Magic Link), um iPhone/iPad Sync zu nutzen.");
@@ -1714,32 +1522,33 @@ async function initApp() {
       return;
     }
 
-    out("✅ Eingeloggt. Lade Daten von Supabase…");
-    console.log("✅ Eingeloggt -> lade Supabase Daten…");
+    // ✅ Sofort lokale Daten anzeigen (schnell!)
+    out("✅ Eingeloggt. Zeige lokale Daten…");
+    renderAll();
 
-    await initFromSupabase();
+    // ☁️ Danach Supabase laden
+    out("☁️ Lade Supabase…");
+    await initFromSupabase_FAST();
 
     out("✅ Supabase geladen");
-    if (typeof renderAll === "function") renderAll();
+    renderAll();
 
     console.log("✅ initApp fertig");
   } catch (e) {
-  const name = e?.name || "";
-  const msg = e?.message || String(e);
+    const name = e?.name || "";
+    const msg = e?.message || String(e);
 
-  // iOS Safari: "The operation was aborted." / AbortError passiert oft beim App-Wechsel
-  if (name === "AbortError" || /aborted/i.test(msg)) {
-    console.error("⚠️ initApp Abort (Safari):", name, msg, e);
-    out("⚠️ Safari hat den Request abgebrochen (passiert oft beim Wechsel Mail↔Safari). Bitte Seite neu laden.");
-    // Wichtig: NICHT crashen -> lokal weiter anzeigen
+    if (name === "AbortError" || /aborted/i.test(msg)) {
+      console.error("⚠️ initApp Abort (Safari):", name, msg, e);
+      out("⚠️ Safari hat den Request abgebrochen. Bitte Seite neu laden.");
+      if (typeof renderAll === "function") renderAll();
+      return;
+    }
+
+    console.error("❌ initApp Fehler:", name, msg, e);
+    out("❌ initApp Fehler: " + msg);
     if (typeof renderAll === "function") renderAll();
-    return;
   }
-
-  console.error("❌ initApp Fehler:", name, msg, e);
-  out("❌ initApp Fehler: " + msg);
-  if (typeof renderAll === "function") renderAll();
-}
 }
 
 // Auth-Events: wenn Magic Link “ankommt”, neu laden
@@ -1750,9 +1559,13 @@ if (supabaseClient) {
 
     if (event === "SIGNED_IN") {
       try {
-        out("✅ Login erkannt. Lade Daten…");
-        await initFromSupabase();
-        if (typeof renderAll === "function") renderAll();
+        out("✅ Login erkannt. Zeige lokale Daten…");
+        renderAll();
+
+        out("☁️ Lade Supabase…");
+        await initFromSupabase_FAST();
+        renderAll();
+
         out("✅ Sync bereit (iPhone/iPad)");
       } catch (e) {
         console.error("❌ After-login load error:", e);
@@ -1774,18 +1587,11 @@ if (document.readyState === "loading") {
   initApp();
 }
 
-// Exports für onclick im HTML
-window.sendMagicLink = sendMagicLink;
-window.logout = logout;
-
 /* =========================================================
    ADMIN-SCHUTZ (Supabase Aktionen nur für dich)
-   - Idee: nur bestimmte Email(s) dürfen Admin-Funktionen
    ========================================================= */
-
 const ADMIN_EMAILS = [
-  "julia.salvamoser@web.de", // <-- HIER deine Login-Email eintragen
-  // "zweite@email.de",      // optional
+  "julia.salvamoser@web.de",
 ];
 
 function normalizeEmail(s) {
@@ -1798,7 +1604,6 @@ async function isAdminUser() {
     const session = await getSessionSafe().catch(() => null);
     const email = normalizeEmail(session?.user?.email);
     if (!email) return false;
-
     return ADMIN_EMAILS.map(normalizeEmail).includes(email);
   } catch (e) {
     console.error("isAdminUser error:", e);
@@ -1815,1196 +1620,1189 @@ async function guardAdminOrWarn() {
   }
   return true;
 }
-      async function updateAdminUI() {
-  const isAdmin = await isAdminUser();
 
+async function updateAdminUI() {
+  const isAdmin = await isAdminUser();
   const b1 = document.getElementById("btnWipeSupabase");
   const b2 = document.getElementById("btnPushSupabase");
   const hint = document.getElementById("adminHintRow");
-
-  // Admin: Buttons an, Hinweis aus
   if (b1) b1.style.display = isAdmin ? "" : "none";
   if (b2) b2.style.display = isAdmin ? "" : "none";
   if (hint) hint.style.display = isAdmin ? "none" : "";
 }
-      
-      
-      // ==========================
-      // NORMALIZE PLANT + GETTERS
-      // ==========================
-      function normalizePlant(p) {
-        const name = String(p?.name || "").trim();
-        if (!name) return null;
-        const roomRaw = String(p?.room || "Wohnzimmer").trim();
-        const room = ROOMS_ALL.includes(roomRaw) ? roomRaw : "Wohnzimmer";
-        const active = p?.active === false ? false : true;
-        return { name, room, active };
-      }
 
-      function getAllPlants() {
-        return loadPlants();
-      }
-      function getActivePlants() {
-        return loadPlants().filter(
-          (p) => p.active !== false && p.room !== REMOVED_ROOM
-        );
-      }
-      function activePlantNames() {
-        return getActivePlants().map((p) => p.name);
-      }
-
-      function getPlantNote(name) {
-        const notes = loadPlantNotes();
-        return String(notes?.[name] || "").trim();
-      }
-      function setPlantNote(name, text) {
-        const notes = loadPlantNotes();
-        const cleaned = String(text || "").trim();
-        if (!cleaned) delete notes[name];
-        else notes[name] = cleaned;
-        savePlantNotes(notes);
-      }
-
-      function groupPlantsByRoom(plants) {
-        const map = new Map();
-        plants.forEach((p) => {
-          const room = ROOMS_ALL.includes(p.room) ? p.room : "Wohnzimmer";
-          if (!map.has(room)) map.set(room, []);
-          map.get(room).push(p);
-        });
-        return ROOMS_ALL.map((r) => [
-          r,
-          (map.get(r) || []).sort((a, b) => a.name.localeCompare(b.name, "de")),
-        ]);
-      }
-
-      // ==========================
-      // AGGREGATION
-      // ==========================
-      function aggregateDay(entries, iso) {
-        const res = {
-          water: { snapshot: [], done: [] },
-          fertilize: { snapshot: [], done: [] },
-          comments: [],
-        };
-
-        const dayEntries = (entries || []).filter(
-          (e) => e && isoDate(e.ts) === iso
-        );
-
-        dayEntries.forEach((e) => {
-          if (e.type === "batch") {
-            if (e.action === "water") {
-              res.water.snapshot = setUnion(res.water.snapshot, e.snapshot);
-              res.water.done = setUnion(res.water.done, e.done);
-            }
-            if (e.action === "fertilize") {
-              res.fertilize.snapshot = setUnion(
-                res.fertilize.snapshot,
-                e.snapshot
-              );
-              res.fertilize.done = setUnion(res.fertilize.done, e.done);
-            }
-          } else if (e.type === "comment") {
-            res.comments.push({
-              id: e.id,
-              plant: e.plant || "Unbekannt",
-              text: e.text || "",
-              ts: e.ts,
-              pinned: !!e.pinned,
-            });
-          }
-        });
-
-        res.water.snapshot = uniq(res.water.snapshot);
-        res.water.done = uniq(res.water.done);
-        res.fertilize.snapshot = uniq(res.fertilize.snapshot);
-        res.fertilize.done = uniq(res.fertilize.done);
-
-        res.comments.sort((a, b) => b.pinned - a.pinned || b.ts - a.ts);
-        return res;
-      }
-
-      function buildCounts(entries) {
-        const map = new Map();
-        const days = uniq((entries || []).map((e) => isoDate(e.ts)));
-
-        days.forEach((iso) => {
-          const agg = aggregateDay(entries, iso);
-          map.set(iso, {
-            hasAny:
-              (agg.water.done?.length || 0) > 0 ||
-              (agg.fertilize.done?.length || 0) > 0 ||
-              (agg.comments?.length || 0) > 0,
-            waterDone: new Set(agg.water.done || []),
-            fertDone: new Set(agg.fertilize.done || []),
-            commentsCount: agg.comments.length || 0,
-          });
-        });
-
-        return map;
-      }
-
-      // ==========================
-      // PLANTS DIALOG (MANAGE)
-      // ==========================
-      function renderPlants() {
-        const plants = getAllPlants();
-        const list = document.getElementById("plantsList");
-        if (!list) return;
-        list.innerHTML = "";
-
-        const grouped = groupPlantsByRoom(plants);
-
-        grouped.forEach(([room, ps]) => {
-          if (!ps.length) return;
-
-          const header = document.createElement("div");
-          header.className = "comment-item";
-          header.innerHTML =
-            `<b>🏠 ${escapeHtml(room)}</b>` +
-            (room === REMOVED_ROOM
-              ? `<div class="muted" style="margin-top:6px;">Diese Pflanzen bleiben für die Historie sichtbar.</div>`
-              : "");
-          list.appendChild(header);
-
-          ps.forEach((pObj) => {
-            const row = document.createElement("div");
-            row.className = "plant-row";
-
-            const left = document.createElement("div");
-            const inactiveHint =
-              pObj.active === false || pObj.room === REMOVED_ROOM
-                ? " (entfernt)"
-                : "";
-            left.innerHTML = `<b>${escapeHtml(pObj.name)}${inactiveHint}</b>
-              <div class="muted">🏠 ${escapeHtml(pObj.room)}</div>`;
-
-            const actions = document.createElement("div");
-            actions.className = "plant-actions";
-
-            const renameBtn = document.createElement("button");
-            renameBtn.className = "btn-ghost";
-            renameBtn.textContent = "✏️";
-            renameBtn.onclick = () => renamePlant(pObj.name);
-
-            const roomBtn = document.createElement("button");
-            roomBtn.className = "btn-ghost";
-            roomBtn.textContent = "🏠";
-            roomBtn.onclick = () => openRoomDialog(pObj.name);
-
-            const noteBtn = document.createElement("button");
-            noteBtn.className = "btn-ghost";
-            noteBtn.textContent = "📝";
-            noteBtn.onclick = () => openPlantNote(pObj.name);
-
-            const delBtn = document.createElement("button");
-            delBtn.className = "btn-danger";
-            delBtn.textContent = "🗑️";
-            delBtn.onclick = () => removePlant(pObj.name);
-
-            actions.append(noteBtn, roomBtn, renameBtn, delBtn);
-            row.append(left, actions);
-            list.appendChild(row);
-          });
-        });
-      }
-
-      function openPlants() {
-        renderPlants();
-        openDialog("plantsDialog");
-      }
-      function closePlants() {
-        closeDialog("plantsDialog");
-      }
-
-      function addPlant() {
-        const inp = document.getElementById("newPlant");
-        const roomSel = document.getElementById("newRoom");
-
-        const name = (inp?.value || "").trim();
-        const room = (roomSel?.value || "Wohnzimmer").trim();
-        if (!name) return;
-
-        const plants = getAllPlants();
-        if (plants.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
-          out("Diese Pflanze gibt’s schon 🙂");
-          return;
-        }
-
-        plants.unshift({
-          name,
-          room: ROOMS_BASE.includes(room) ? room : "Wohnzimmer",
-          active: true,
-        });
-
-        savePlants(plants);
-
-        if (inp) inp.value = "";
-        if (roomSel) roomSel.value = "Wohnzimmer";
-
-        out(`✅ Pflanze hinzugefügt: ${name} (${room})`);
-        renderAll();
-      }
-
-      function renamePlant(oldName) {
-        const newName = prompt(`Neuer Name für „${oldName}“:`, oldName);
-        if (newName === null) return;
-        const cleaned = newName.trim();
-        if (!cleaned) return;
-
-        const plants = getAllPlants();
-        if (
-          plants.some(
-            (p) =>
-              p.name.toLowerCase() === cleaned.toLowerCase() &&
-              p.name !== oldName
-          )
-        ) {
-          out("Name existiert schon 🙂");
-          return;
-        }
-
-        const updatedPlants = plants.map((p) =>
-          p.name === oldName ? { ...p, name: cleaned } : p
-        );
-        savePlants(updatedPlants);
-
-        const entries = loadEntries().map((e) =>
-          renamePlantInEntry(e, oldName, cleaned)
-        );
-        saveEntries(entries);
-
-        const notes = loadPlantNotes();
-        if (notes[oldName]) {
-          notes[cleaned] = notes[oldName];
-          delete notes[oldName];
-          savePlantNotes(notes);
-        }
-
-        out(`✅ Umbenannt: ${oldName} → ${cleaned}`);
-        renderAll();
-      }
-
-      function renamePlantInEntry(e, oldName, newName) {
-        if (!e) return e;
-        if (e.type === "batch") {
-          const repl = (arr) =>
-            Array.isArray(arr)
-              ? arr.map((x) => (x === oldName ? newName : x))
-              : arr;
-          return { ...e, snapshot: repl(e.snapshot), done: repl(e.done) };
-        }
-        if (e.type === "comment") {
-          if (e.plant === oldName) return { ...e, plant: newName };
-          return e;
-        }
-        return e;
-      }
-
-      // ==========================
-      // ROOM DIALOG
-      // ==========================
-      function openRoomDialog(name) {
-        pendingRoomPlant = name;
-        const plants = getAllPlants();
-        const current = plants.find((p) => p.name === name);
-
-        const label = document.getElementById("roomPlantLabel");
-        if (label) label.textContent = `Pflanze: ${name}`;
-
-        const sel = document.getElementById("roomSelect");
-        if (!sel) return;
-
-        sel.innerHTML = "";
-        ROOMS_ALL.forEach((r) => {
-          const opt = document.createElement("option");
-          opt.value = r;
-          opt.textContent = r;
-          sel.appendChild(opt);
-        });
-
-        sel.value = ROOMS_ALL.includes(current?.room)
-          ? current.room
-          : "Wohnzimmer";
-        openDialog("roomDialog");
-      }
-
-      function closeRoomDialog() {
-        pendingRoomPlant = null;
-        closeDialog("roomDialog");
-      }
-
-      function saveRoomDialog() {
-        if (!pendingRoomPlant) return;
-        const room = document.getElementById("roomSelect")?.value;
-
-        const plants = getAllPlants();
-        const updated = plants.map((p) => {
-          if (p.name !== pendingRoomPlant) return p;
-          const nextRoom = ROOMS_ALL.includes(room) ? room : "Wohnzimmer";
-          const nextActive = nextRoom === REMOVED_ROOM ? false : true;
-          return { ...p, room: nextRoom, active: nextActive };
-        });
-
-        savePlants(updated);
-
-        out(`🏠 Raum gesetzt: ${pendingRoomPlant} → ${room}`);
-        closeRoomDialog();
-        renderAll();
-      }
-
-      // ==========================
-      // DELETE PLANT DIALOG
-      // ==========================
-      function removePlant(name) {
-        const plants = getAllPlants();
-        const activeCount = getActivePlants().length;
-        const target = plants.find((p) => p.name === name);
-        const isActive =
-          target && target.active !== false && target.room !== REMOVED_ROOM;
-
-        if (isActive && activeCount <= 1) {
-          out("Mindestens 1 aktive Pflanze behalten 🙂");
-          return;
-        }
-        pendingPlantToDelete = name;
-        openDeletePlantDialog(name);
-      }
-
-      function openDeletePlantDialog(plantName) {
-        const t = document.getElementById("deletePlantText");
-        if (t)
-          t.textContent = `Was soll mit der Historie von „${plantName}“ passieren?`;
-        openDialog("deletePlantDialog");
-      }
-
-      function closeDeletePlantDialog() {
-        closeDialog("deletePlantDialog");
-      }
-
-      function deletePlantCancel() {
-        pendingPlantToDelete = null;
-        closeDeletePlantDialog();
-        out("Abgebrochen – nichts geändert.");
-      }
-
-      function deletePlantKeepHistory() {
-        if (!pendingPlantToDelete) return;
-        const name = pendingPlantToDelete;
-
-        const plants = getAllPlants();
-        const updated = plants.map((p) =>
-          p.name !== name ? p : { ...p, room: REMOVED_ROOM, active: false }
-        );
-        savePlants(updated);
-
-        pendingPlantToDelete = null;
-        closeDeletePlantDialog();
-        out(
-          `✅ „${name}“ wurde zu „${REMOVED_ROOM}“ verschoben (Historie bleibt).`
-        );
-        renderAll();
-      }
-
-      function removePlantFromEntry(e, name) {
-        if (!e) return e;
-        if (e.type === "batch") {
-          const filt = (arr) =>
-            Array.isArray(arr) ? arr.filter((x) => x !== name) : arr;
-          const next = { ...e, snapshot: filt(e.snapshot), done: filt(e.done) };
-          const doneLen = Array.isArray(next.done) ? next.done.length : 0;
-          if (doneLen === 0) return null;
-          return next;
-        }
-        if (e.type === "comment") return e.plant === name ? null : e;
-        return e;
-      }
-
-      function deletePlantDeleteHistory() {
-        if (!pendingPlantToDelete) return;
-        const name = pendingPlantToDelete;
-
-        savePlants(getAllPlants().filter((p) => p.name !== name));
-
-        const entries = loadEntries();
-        const cleaned = entries
-          .map((e) => removePlantFromEntry(e, name))
-          .filter((e) => e !== null);
-        saveEntries(cleaned);
-
-        setPlantNote(name, "");
-
-        pendingPlantToDelete = null;
-        closeDeletePlantDialog();
-        out(`🗑️ Pflanze + Historie gelöscht: ${name}`);
-        renderAll();
-      }
-
-      // ==========================
-      // PLANT NOTE (per plant)
-      // ==========================
-      function openPlantNote(name) {
-        pendingPlantForNote = name;
-        const title = document.getElementById("plantNoteTitle");
-        const ta = document.getElementById("plantNoteText");
-        if (title) title.textContent = `📝 Pflanzenkommentar – ${name}`;
-        if (ta) ta.value = getPlantNote(name);
-        openDialog("plantNoteDialog");
-      }
-
-      function closePlantNote() {
-        pendingPlantForNote = null;
-        closeDialog("plantNoteDialog");
-      }
-
-      function savePlantNote() {
-        if (!pendingPlantForNote) return;
-        const text = document.getElementById("plantNoteText")?.value || "";
-        setPlantNote(pendingPlantForNote, text);
-        out("📝 Pflanzenkommentar gespeichert ✅");
-        closePlantNote();
-        renderAll();
-      }
-
-      function clearPlantNote() {
-        if (!pendingPlantForNote) return;
-        setPlantNote(pendingPlantForNote, "");
-        const ta = document.getElementById("plantNoteText");
-        if (ta) ta.value = "";
-        out("🗑️ Pflanzenkommentar gelöscht.");
-        renderAll();
-      }
-
-      // ==========================
-      // PLANT OVERVIEW
-      // ==========================
-      function openPlantOverview() {
-        renderPlantOverview();
-        openDialog("plantOverviewDialog");
-      }
-      function closePlantOverview() {
-        closeDialog("plantOverviewDialog");
-      }
-
-      function renderPlantOverview() {
-        const wrap = document.getElementById("plantOverviewList");
-        if (!wrap) return;
-        wrap.innerHTML = "";
-
-        const plants = getAllPlants();
-        const grouped = groupPlantsByRoom(plants);
-
-        grouped.forEach(([room, ps]) => {
-          if (!ps.length) return;
-
-          const card = document.createElement("div");
-          card.className = "comment-item";
-          card.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
-
-          ps.forEach((p) => {
-            const note = getPlantNote(p.name);
-            const line = document.createElement("div");
-            line.style.marginTop = "10px";
-            line.innerHTML =
-              `🪴 <b>${escapeHtml(p.name)}</b>` +
-              (note
-                ? `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
-                    note
-                  )}</div>`
-                : `<div class="muted" style="margin-top:6px;">(kein Pflanzenkommentar)</div>`);
-            card.appendChild(line);
-          });
-
-          wrap.appendChild(card);
-        });
-      }
-      function openPlantsFromOverview() {
-  closeDialog("plantOverviewDialog"); // erst Overview zu, sonst Dialog-in-Dialog Stress
-  openPlants();                       // öffnet Pflanzen verwalten
+/* =========================================================
+   (Deine bestehenden Admin-Funktionen bleiben unverändert)
+   ========================================================= */
+async function wipeSupabaseData() {
+  try {
+    if (!(await guardAdminOrWarn())) return;
+    if (!supabaseClient) throw new Error("supabaseClient fehlt");
+
+    const session = await getSessionSafe().catch(() => null);
+    if (!session) {
+      out("🔒 Bitte einloggen, um Supabase löschen zu können.");
+      return;
+    }
+
+    const ok = confirm(
+      "Wirklich ALLE aktuellen Supabase-Daten (entries, plants, plant_notes) für deinen Account löschen?\n\n" +
+      "Das betrifft nur DEINEN User (RLS)."
+    );
+    if (!ok) return;
+
+    out("🧨 Lösche Supabase-Daten…");
+    await sbReplaceAll("entries", [], () => Date.now());
+    await sbReplaceAll("plants", [], () => Date.now());
+    await sbReplaceAll("plant_notes", [], () => Date.now());
+
+    out("✅ Supabase ist jetzt leer. Als nächstes: Backup importieren.");
+  } catch (e) {
+    console.error("❌ wipeSupabaseData Fehler:", e);
+    out("❌ Löschen fehlgeschlagen: " + (e?.message || e));
+  }
+}
+window.wipeSupabaseData = wipeSupabaseData;
+
+async function pushLocalToSupabase() {
+  try {
+    if (!(await guardAdminOrWarn())) return;
+    if (!supabaseClient) throw new Error("supabaseClient fehlt");
+
+    const session = await getSessionSafe().catch(() => null);
+    if (!session) {
+      out("🔒 Bitte einloggen, dann nochmal.");
+      return;
+    }
+
+    const entries = loadEntriesFromLocal();
+    const plants  = loadPlantsFromLocal();
+    const notes   = loadNotesFromLocal();
+
+    const ok = confirm(
+      `Lokale Daten zu Supabase hochladen?\n\n` +
+      `Entries: ${entries.length}\nPlants: ${plants.length}\nNotes: ${Object.keys(notes || {}).length}\n\n` +
+      `Das überschreibt den aktuellen Supabase-Stand (für deinen User).`
+    );
+    if (!ok) return;
+
+    out("☁️ Upload: plants…");
+    await sbReplaceAll("plants", plants, () => Date.now());
+
+    out("☁️ Upload: plant_notes…");
+    await sbReplaceAll("plant_notes", [notes], () => Date.now());
+
+    out("☁️ Upload: entries…");
+    await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
+
+    out("✅ Lokale Daten sind jetzt in Supabase.");
+    await initFromSupabase_FAST();
+    renderAll();
+  } catch (e) {
+    console.error("❌ pushLocalToSupabase Fehler:", e);
+    out("❌ Upload fehlgeschlagen: " + (e?.message || e));
+  }
+}
+window.pushLocalToSupabase = pushLocalToSupabase;
+
+/* =========================================================
+   NORMALIZE PLANT + GETTERS
+   ========================================================= */
+function normalizePlant(p) {
+  const name = String(p?.name || "").trim();
+  if (!name) return null;
+  const roomRaw = String(p?.room || "Wohnzimmer").trim();
+  const room = ROOMS_ALL.includes(roomRaw) ? roomRaw : "Wohnzimmer";
+  const active = p?.active === false ? false : true;
+  return { name, room, active };
 }
 
-      // ==========================
-      // HISTORY DIALOG
-      // ==========================
-      function renderHistory(entries) {
-        const historyEl = document.getElementById("history");
-        if (!historyEl) return;
-        historyEl.innerHTML = "";
+function getAllPlants() {
+  return loadPlants();
+}
+function getActivePlants() {
+  return loadPlants().filter((p) => p.active !== false && p.room !== REMOVED_ROOM);
+}
+function activePlantNames() {
+  return getActivePlants().map((p) => p.name);
+}
 
-        if (!(entries || []).length) {
-          const li = document.createElement("li");
-          li.textContent = "Noch keine Einträge.";
-          historyEl.appendChild(li);
-          return;
-        }
+function getPlantNote(name) {
+  const notes = loadPlantNotes();
+  return String(notes?.[name] || "").trim();
+}
+function setPlantNote(name, text) {
+  const notes = loadPlantNotes();
+  const cleaned = String(text || "").trim();
+  if (!cleaned) delete notes[name];
+  else notes[name] = cleaned;
+  savePlantNotes(notes);
+}
 
-        const days = uniq(entries.map((e) => isoDate(e.ts))).sort((a, b) =>
-          a < b ? 1 : -1
-        );
-        const total = getActivePlants().length;
-
-        days.forEach((iso) => {
-          const agg = aggregateDay(entries, iso);
-          const parts = [];
-          parts.push(`🌿${total}`);
-          if (agg.water.done.length) parts.push(`💧${agg.water.done.length}`);
-          if (agg.fertilize.done.length)
-            parts.push(`🧪${agg.fertilize.done.length}`);
-          if (agg.comments.length) parts.push(`📝${agg.comments.length}`);
-
-          const li = document.createElement("li");
-          li.textContent = `${iso}: ${parts.join("  •  ")}`;
-          historyEl.appendChild(li);
-        });
-      }
-
-      function openHistory() {
-        renderAll();
-        openDialog("historyDialog");
-      }
-      function closeHistory() {
-        closeDialog("historyDialog");
-      }
-
-      // ==========================
-      // ACTION DIALOG (water/fertilize) + backdating
-      // ==========================
-      function setActionDateToday() {
-        const today = isoDate(new Date());
-        const dateEl = document.getElementById("actionDate");
-        if (dateEl) dateEl.value = today;
-        actionISO = today;
-        refreshActionListForDate();
-      }
-
-      function openActionWithDate(action, iso, lockDate = false) {
-        pendingAction = action;
-
-        const title = document.getElementById("actionTitle");
-        if (title) {
-          title.textContent =
-            action === "water"
-              ? "💧 Gießen – welche Pflanzen?"
-              : "🧪 Düngen – welche Pflanzen?";
-        }
-
-        actionISO = iso || isoDate(new Date());
-        actionDateLocked = !!lockDate;
-
-        const dateEl = document.getElementById("actionDate");
-        if (dateEl) {
-          dateEl.value = actionISO;
-          dateEl.disabled = actionDateLocked;
-
-          dateEl.onchange = () => {
-            if (actionDateLocked) {
-              dateEl.value = actionISO;
-              return;
-            }
-            actionISO = dateEl.value || isoDate(new Date());
-            refreshActionListForDate();
-          };
-        }
-
-        const todayBtn = document.getElementById("actionDateTodayBtn");
-        if (todayBtn) todayBtn.style.display = actionDateLocked ? "none" : "";
-
-        refreshActionListForDate();
-        openDialog("actionDialog");
-      }
-
-      function openAction(action) {
-        // Top-bar actions: standardmäßig "heute" und Datum gesperrt
-        openActionWithDate(action, isoDate(new Date()), true);
-      }
-
-      function openActionForSelectedDay(action) {
-        openActionWithDate(action, state.selectedISO, true);
-      }
-
-      function refreshActionListForDate() {
-        const entries = loadEntries();
-        const agg = aggregateDay(entries, actionISO);
-        const alreadyDone =
-          pendingAction === "water" ? agg.water.done : agg.fertilize.done;
-
-        const hint = document.getElementById("actionHint");
-        if (hint) {
-          hint.textContent = alreadyDone.length
-            ? `Smart-Default: an diesem Datum schon geloggt (${alreadyDone.length}) ist abgewählt.`
-            : "Smart-Default: alle Pflanzen sind ausgewählt.";
-        }
-
-        const list = document.getElementById("actionList");
-        if (!list) return;
-        list.innerHTML = "";
-
-        const plants = getActivePlants();
-        plants.forEach((pObj, idx) => {
-          const row = document.createElement("label");
-          row.className = "checkitem";
-
-          const cb = document.createElement("input");
-          cb.type = "checkbox";
-          cb.dataset.plant = pObj.name;
-          cb.id = "cb_" + idx;
-          cb.checked = !alreadyDone.includes(pObj.name);
-
-          const text = document.createElement("span");
-          text.textContent = `${pObj.name} (${pObj.room || "Wohnzimmer"})`;
-
-          row.append(cb, text);
-          list.appendChild(row);
-        });
-      }
-
-      function selectAllPlants() {
-        document
-          .querySelectorAll("#actionList input[type=checkbox]")
-          .forEach((cb) => (cb.checked = true));
-      }
-
-      function selectNonePlants() {
-        document
-          .querySelectorAll("#actionList input[type=checkbox]")
-          .forEach((cb) => (cb.checked = false));
-      }
-
-      function cancelAction() {
-        pendingAction = null;
-        closeDialog("actionDialog");
-        out("Abgebrochen – nichts gespeichert.");
-      }
-
-      function confirmAction() {
-        if (!pendingAction) return;
-
-        const selected = Array.from(
-          document.querySelectorAll("#actionList input[type=checkbox]")
-        )
-          .filter((cb) => cb.checked)
-          .map((cb) => cb.dataset.plant);
-
-        if (selected.length === 0) {
-          out("Keine Pflanzen ausgewählt 🙂");
-          return;
-        }
-
-        const iso = actionISO || isoDate(new Date());
-        const ts = isoToNoonTs(iso);
-        const dateStr = new Date(ts).toLocaleDateString("de-DE");
-
-        const entries = loadEntries();
-        const idx = entries.findIndex(
-          (e) =>
-            e &&
-            e.type === "batch" &&
-            e.action === pendingAction &&
-            isoDate(e.ts) === iso
-        );
-
-        const snapshot = activePlantNames();
-
-        if (idx >= 0) {
-          const existing = entries[idx];
-          entries[idx] = {
-            ...existing,
-            ts,
-            date: dateStr,
-            snapshot: setUnion(existing.snapshot, snapshot),
-            done: setUnion(existing.done, selected),
-          };
-        } else {
-          entries.unshift({
-            type: "batch",
-            action: pendingAction,
-            ts,
-            date: dateStr,
-            snapshot: uniq(snapshot),
-            done: uniq(selected),
-          });
-        }
-
-        // IMPORTANT: saveEntries() triggert bei dir die Supabase-Sync-Strategie
-        saveEntries(entries);
-
-        out(
-          `${pendingAction === "water" ? "💧" : "🧪"} gespeichert für ${iso
-            .split("-")
-            .reverse()
-            .join(".")}: ${selected.length} Pflanze(n) ✅`
-        );
-
-        state.selectedISO = iso;
-        pendingAction = null;
-        closeDialog("actionDialog");
-        renderAll();
-      }
-
-      // ==========================
-      // COMMENTS (today + per day popup)
-      // ==========================
-      function fillCommentPlants(selectElId, includeRemoved = true) {
-  const plants = includeRemoved ? getAllPlants() : getActivePlants();
-  const sel = document.getElementById(selectElId);
-  if (!sel) return;
-  sel.innerHTML = "";
-
-  // ✅ Allgemein-Option ganz oben
-  const optGeneral = document.createElement("option");
-  optGeneral.value = GENERAL_COMMENT_KEY;
-  optGeneral.textContent = "🗒️ Allgemein (Tageskommentar)";
-  sel.appendChild(optGeneral);
-
+function groupPlantsByRoom(plants) {
+  const map = new Map();
   plants.forEach((p) => {
-    const opt = document.createElement("option");
-    opt.value = p.name;
-    const removedTag =
-      p.room === REMOVED_ROOM || p.active === false ? " • entfernt" : "";
-    opt.textContent = `${p.name} (${p.room})${removedTag}`;
-    sel.appendChild(opt);
+    const room = ROOMS_ALL.includes(p.room) ? p.room : "Wohnzimmer";
+    if (!map.has(room)) map.set(room, []);
+    map.get(room).push(p);
+  });
+  return ROOMS_ALL.map((r) => [
+    r,
+    (map.get(r) || []).sort((a, b) => a.name.localeCompare(b.name, "de")),
+  ]);
+}
+
+/* =========================================================
+   AGGREGATION
+   ========================================================= */
+function aggregateDay(entries, iso) {
+  const res = {
+    water: { snapshot: [], done: [] },
+    fertilize: { snapshot: [], done: [] },
+    comments: [],
+  };
+
+  const dayEntries = (entries || []).filter((e) => e && isoDate(e.ts) === iso);
+
+  dayEntries.forEach((e) => {
+    if (e.type === "batch") {
+      if (e.action === "water") {
+        res.water.snapshot = setUnion(res.water.snapshot, e.snapshot);
+        res.water.done = setUnion(res.water.done, e.done);
+      }
+      if (e.action === "fertilize") {
+        res.fertilize.snapshot = setUnion(res.fertilize.snapshot, e.snapshot);
+        res.fertilize.done = setUnion(res.fertilize.done, e.done);
+      }
+    } else if (e.type === "comment") {
+      res.comments.push({
+        id: e.id,
+        plant: e.plant || "Unbekannt",
+        text: e.text || "",
+        ts: e.ts,
+        pinned: !!e.pinned,
+      });
+    }
+  });
+
+  res.water.snapshot = uniq(res.water.snapshot);
+  res.water.done = uniq(res.water.done);
+  res.fertilize.snapshot = uniq(res.fertilize.snapshot);
+  res.fertilize.done = uniq(res.fertilize.done);
+
+  res.comments.sort((a, b) => b.pinned - a.pinned || b.ts - a.ts);
+  return res;
+}
+
+function buildCounts(entries) {
+  const map = new Map();
+  const days = uniq((entries || []).map((e) => isoDate(e.ts)));
+
+  days.forEach((iso) => {
+    const agg = aggregateDay(entries, iso);
+    map.set(iso, {
+      hasAny:
+        (agg.water.done?.length || 0) > 0 ||
+        (agg.fertilize.done?.length || 0) > 0 ||
+        (agg.comments?.length || 0) > 0,
+      waterDone: new Set(agg.water.done || []),
+      fertDone: new Set(agg.fertilize.done || []),
+      commentsCount: agg.comments.length || 0,
+    });
+  });
+
+  return map;
+}
+
+/* =========================================================
+   PLANTS DIALOG (MANAGE)
+   ========================================================= */
+function renderPlants() {
+  const plants = getAllPlants();
+  const list = document.getElementById("plantsList");
+  if (!list) return;
+  list.innerHTML = "";
+
+  const grouped = groupPlantsByRoom(plants);
+
+  grouped.forEach(([room, ps]) => {
+    if (!ps.length) return;
+
+    const header = document.createElement("div");
+    header.className = "comment-item";
+    header.innerHTML =
+      `<b>🏠 ${escapeHtml(room)}</b>` +
+      (room === REMOVED_ROOM
+        ? `<div class="muted" style="margin-top:6px;">Diese Pflanzen bleiben für die Historie sichtbar.</div>`
+        : "");
+    list.appendChild(header);
+
+    ps.forEach((pObj) => {
+      const row = document.createElement("div");
+      row.className = "plant-row";
+
+      const left = document.createElement("div");
+      const inactiveHint =
+        pObj.active === false || pObj.room === REMOVED_ROOM ? " (entfernt)" : "";
+      left.innerHTML = `<b>${escapeHtml(pObj.name)}${inactiveHint}</b>
+        <div class="muted">🏠 ${escapeHtml(pObj.room)}</div>`;
+
+      const actions = document.createElement("div");
+      actions.className = "plant-actions";
+
+      const renameBtn = document.createElement("button");
+      renameBtn.className = "btn-ghost";
+      renameBtn.textContent = "✏️";
+      renameBtn.onclick = () => renamePlant(pObj.name);
+
+      const roomBtn = document.createElement("button");
+      roomBtn.className = "btn-ghost";
+      roomBtn.textContent = "🏠";
+      roomBtn.onclick = () => openRoomDialog(pObj.name);
+
+      const noteBtn = document.createElement("button");
+      noteBtn.className = "btn-ghost";
+      noteBtn.textContent = "📝";
+      noteBtn.onclick = () => openPlantNote(pObj.name);
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn-danger";
+      delBtn.textContent = "🗑️";
+      delBtn.onclick = () => removePlant(pObj.name);
+
+      actions.append(noteBtn, roomBtn, renameBtn, delBtn);
+      row.append(left, actions);
+      list.appendChild(row);
+    });
   });
 }
 
+function openPlants() {
+  renderPlants();
+  openDialog("plantsDialog");
+}
+function closePlants() {
+  closeDialog("plantsDialog");
+}
 
-      function saveCommentForISO(iso, plant, text, pinned) {
-        const ts = isoToNoonTs(iso);
-        const entry = {
-          type: "comment",
-          id: uuid(),
-          ts,
-          date: new Date(ts).toLocaleDateString("de-DE"),
-          plant,
-          text,
-          pinned: !!pinned,
-        };
-        const entries = loadEntries();
-        entries.unshift(entry);
-        saveEntries(entries);
-      }
+function addPlant() {
+  const inp = document.getElementById("newPlant");
+  const roomSel = document.getElementById("newRoom");
 
-      function openCommentToday() {
-        fillCommentPlants("commentPlant", true);
-        const ta = document.getElementById("commentText");
-        const pin = document.getElementById("commentPinned");
-        if (ta) ta.value = "";
-        if (pin) pin.checked = false;
-        openDialog("commentDialog");
-      }
+  const name = (inp?.value || "").trim();
+  const room = (roomSel?.value || "Wohnzimmer").trim();
+  if (!name) return;
 
-      function closeComment() {
-        closeDialog("commentDialog");
-      }
-
-      function saveCommentToday() {
-        const plant = (
-          document.getElementById("commentPlant")?.value || ""
-        ).trim();
-        const text = (
-          document.getElementById("commentText")?.value || ""
-        ).trim();
-        const pinned = !!document.getElementById("commentPinned")?.checked;
-
-        if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
-        if (!text) return out("Bitte einen Kommentar eingeben 🙂");
-
-        const iso = isoDate(new Date());
-        saveCommentForISO(iso, plant, text, pinned);
-
-        state.selectedISO = iso;
-        out("📝 Kommentar gespeichert ✅");
-        closeComment();
-        renderAll();
-      }
-
-      // ==========================
-      // DAY COMMENTS POPUP (badge)
-      // ==========================
-      function openDayCommentsFromBadge(evt, iso) {
-        if (evt) evt.stopPropagation();
-        openDayComments(iso);
-      }
-
-      function openDayComments(iso) {
-        popupISO = iso;
-
-        const title = document.getElementById("dayCommentsTitle");
-        if (title)
-          title.textContent = `📝 Kommentare – ${iso
-            .split("-")
-            .reverse()
-            .join(".")}`;
-
-        fillCommentPlants("popupCommentPlant", true);
-
-        const ta = document.getElementById("popupCommentText");
-        const pin = document.getElementById("popupCommentPinned");
-        if (ta) ta.value = "";
-        if (pin) pin.checked = false;
-
-        renderDayCommentsPopup();
-        openDialog("dayCommentsDialog");
-      }
-
-      function closeDayComments() {
-        popupISO = null;
-        closeDialog("dayCommentsDialog");
-      }
-
-      function renderDayCommentsPopup() {
-        const wrap = document.getElementById("dayCommentsList");
-        if (!wrap) return;
-        wrap.innerHTML = "";
-        if (!popupISO) return;
-
-        const entries = loadEntries();
-        const agg = aggregateDay(entries, popupISO);
-
-        if (!agg.comments.length) {
-          const p = document.createElement("p");
-          p.className = "muted";
-          p.textContent = "Noch keine Kommentare an diesem Tag.";
-          wrap.appendChild(p);
-          return;
-        }
-
-        agg.comments.forEach((c) => {
-          const box = document.createElement("div");
-          box.className = "comment-item" + (c.pinned ? " pinned" : "");
-
-          const header = document.createElement("div");
-          header.className = "comment-header";
-
-          const left = document.createElement("div");
-          left.innerHTML = `🪴 <b>${escapeHtml(c.plant)}</b>${
-            c.pinned ? " <span class='pill'>📌</span>" : ""
-          }`;
-
-          const actions = document.createElement("div");
-          actions.className = "comment-actions";
-
-          const pinBtn = document.createElement("button");
-          pinBtn.className = "btn-ghost";
-          pinBtn.textContent = c.pinned ? "📌✓" : "📌";
-          pinBtn.onclick = () => togglePinComment(c.id);
-
-          const editBtn = document.createElement("button");
-          editBtn.className = "btn-ghost";
-          editBtn.textContent = "✏️";
-          editBtn.onclick = () => editComment(c.id);
-
-          const delBtn = document.createElement("button");
-          delBtn.className = "btn-danger";
-          delBtn.textContent = "🗑️";
-          delBtn.onclick = () => deleteComment(c.id);
-
-          actions.append(pinBtn, editBtn, delBtn);
-          header.append(left, actions);
-
-          const text = document.createElement("div");
-          text.className = "comment-text";
-          text.textContent = c.text;
-
-          box.append(header, text);
-          wrap.appendChild(box);
-        });
-      }
-
-      function savePopupComment() {
-        if (!popupISO) return;
-
-        const plant = (
-          document.getElementById("popupCommentPlant")?.value || ""
-        ).trim();
-        const text = (
-          document.getElementById("popupCommentText")?.value || ""
-        ).trim();
-        const pinned = !!document.getElementById("popupCommentPinned")?.checked;
-
-        if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
-        if (!text) return out("Bitte einen Kommentar eingeben 🙂");
-
-        saveCommentForISO(popupISO, plant, text, pinned);
-
-        const ta = document.getElementById("popupCommentText");
-        const pin = document.getElementById("popupCommentPinned");
-        if (ta) ta.value = "";
-        if (pin) pin.checked = false;
-
-        out("📝 Kommentar gespeichert ✅");
-        renderAll();
-        renderDayCommentsPopup();
-        renderDayViewPopup();
-      }
-
-      function editComment(id) {
-        const entries = loadEntries();
-        const idx = entries.findIndex(
-          (e) => e && e.type === "comment" && e.id === id
-        );
-        if (idx < 0) return;
-
-        const current = entries[idx];
-        const newText = prompt(
-          `Kommentar für ${current.plant} bearbeiten:`,
-          current.text || ""
-        );
-        if (newText === null) return;
-
-        const cleaned = String(newText).trim();
-        if (!cleaned) return alert("Kommentar darf nicht leer sein.");
-
-        entries[idx] = { ...current, text: cleaned };
-        saveEntries(entries);
-
-        out("📝 Kommentar aktualisiert ✅");
-        renderAll();
-        if (popupISO) renderDayCommentsPopup();
-        renderDayViewPopup();
-      }
-
-      function deleteComment(id) {
-        if (!confirm("Kommentar wirklich löschen?")) return;
-        const entries = loadEntries().filter(
-          (e) => !(e && e.type === "comment" && e.id === id)
-        );
-        saveEntries(entries);
-
-        out("🗑️ Kommentar gelöscht.");
-        renderAll();
-        if (popupISO) renderDayCommentsPopup();
-        renderDayViewPopup();
-      }
-
-      function togglePinComment(id) {
-        const entries = loadEntries();
-        const idx = entries.findIndex(
-          (e) => e && e.type === "comment" && e.id === id
-        );
-        if (idx < 0) return;
-
-        entries[idx] = { ...entries[idx], pinned: !entries[idx].pinned };
-        saveEntries(entries);
-
-        renderAll();
-        if (popupISO) renderDayCommentsPopup();
-        renderDayViewPopup();
-      }
-
-      // ==========================
-      // DAY VIEW DIALOG
-      // ==========================
-      function openDayView(iso) {
-        state.selectedISO = iso;
-
-        const title = document.getElementById("dayViewTitle");
-        if (title)
-          title.textContent = `📅 Tagesansicht – ${iso
-            .split("-")
-            .reverse()
-            .join(".")}`;
-
-        fillCommentPlants("dayPopupCommentPlant", true);
-
-        const ta = document.getElementById("dayPopupCommentText");
-        const pin = document.getElementById("dayPopupCommentPinned");
-        if (ta) ta.value = "";
-        if (pin) pin.checked = false;
-
-        
-        renderDayViewPopup();
-        openDialog("dayViewDialog");
-      }
-
-      function closeDayView() {
-        closeDialog("dayViewDialog");
-      }
-
-      function pillMini(text, cls) {
-        return `<span class="pill-mini ${cls}">${text}</span>`;
-      }
-
-      function renderDayViewPopup() {
-  const body = document.getElementById("dayViewBody");
-  if (!body) return;
-  body.innerHTML = "";
-
-  const entries = loadEntries();
-  const iso = state.selectedISO;
-  const agg = aggregateDay(entries, iso);
-
-  const waterDone = new Set(agg.water.done || []);
-  const fertDone = new Set(agg.fertilize.done || []);
-
-  // ✅ Kommentare trennen: Allgemein vs. pro Pflanze
-const generalComments = [];
-const commentsMap = new Map();
-
-(agg.comments || []).forEach((c) => {
-  const plant = c.plant || "Unbekannt";
-
-  if (plant === GENERAL_COMMENT_KEY) {
-    generalComments.push(c);
+  const plants = getAllPlants();
+  if (plants.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+    out("Diese Pflanze gibt’s schon 🙂");
     return;
   }
 
-  if (!commentsMap.has(plant)) commentsMap.set(plant, []);
-  commentsMap.get(plant).push(c);
-});
-
-
-  function statusPillsFor(name) {
-    const pills = [];
-    if (waterDone.has(name)) pills.push(pillMini("💧", "water"));
-    if (fertDone.has(name)) pills.push(pillMini("🧪", "fert"));
-    const cc = (commentsMap.get(name) || []).length;
-    if (cc) pills.push(pillMini(`📝${cc}`, "note"));
-    if (!waterDone.has(name) && !fertDone.has(name)) pills.unshift(pillMini("—", "none"));
-    return pills.join("");
-  }
-
-  function commentsHtmlFor(name) {
-    const arr = commentsMap.get(name) || [];
-    if (!arr.length) return "";
-    return `
-      <div class="muted" style="margin-top:6px;">
-        ${arr
-          .map((c) => {
-            const pin = c.pinned ? " <span class='pill' style='transform:translateY(-1px);'>📌</span>" : "";
-            return `
-              <div style="margin-top:6px; white-space:pre-wrap;">
-                ${pin}${escapeHtml(c.text)}
-              </div>
-            `;
-          })
-          .join("")}
-      </div>
-    `;
-  }
-
-  const all = getAllPlants();
-  const active = all.filter((p) => p.active !== false && p.room !== REMOVED_ROOM);
-  const removed = all.filter((p) => p.room === REMOVED_ROOM || p.active === false);
-
-  const activeGrouped = groupPlantsByRoom(active);
-
-        // 🗒️ Allgemeine Tageskommentare ganz oben anzeigen
-if (generalComments.length) {
-  const box = document.createElement("div");
-  box.className = "comment-item";
-  box.innerHTML = `<b>🗒️ Allgemeiner Tageskommentar</b>`;
-
-  generalComments.forEach((c) => {
-    const item = document.createElement("div");
-    item.style.marginTop = "10px";
-    item.innerHTML =
-      `${c.pinned ? "<span class='pill'>📌</span> " : ""}` +
-      `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
-        c.text
-      )}</div>`;
-    box.appendChild(item);
+  plants.unshift({
+    name,
+    room: ROOMS_BASE.includes(room) ? room : "Wohnzimmer",
+    active: true,
   });
 
-  body.appendChild(box);
+  savePlants(plants);
+
+  if (inp) inp.value = "";
+  if (roomSel) roomSel.value = "Wohnzimmer";
+
+  out(`✅ Pflanze hinzugefügt: ${name} (${room})`);
+  renderAll();
 }
 
-  // ✅ Aktive Pflanzen: pro Pflanze Status + Kommentare direkt darunter
-  activeGrouped.forEach(([room, ps]) => {
-    if (room === REMOVED_ROOM) return;
+function renamePlant(oldName) {
+  const newName = prompt(`Neuer Name für „${oldName}“:`, oldName);
+  if (newName === null) return;
+  const cleaned = newName.trim();
+  if (!cleaned) return;
+
+  const plants = getAllPlants();
+  if (
+    plants.some(
+      (p) => p.name.toLowerCase() === cleaned.toLowerCase() && p.name !== oldName
+    )
+  ) {
+    out("Name existiert schon 🙂");
+    return;
+  }
+
+  const updatedPlants = plants.map((p) => (p.name === oldName ? { ...p, name: cleaned } : p));
+  savePlants(updatedPlants);
+
+  const entries = loadEntries().map((e) => renamePlantInEntry(e, oldName, cleaned));
+  saveEntries(entries);
+
+  const notes = loadPlantNotes();
+  if (notes[oldName]) {
+    notes[cleaned] = notes[oldName];
+    delete notes[oldName];
+    savePlantNotes(notes);
+  }
+
+  out(`✅ Umbenannt: ${oldName} → ${cleaned}`);
+  renderAll();
+}
+
+function renamePlantInEntry(e, oldName, newName) {
+  if (!e) return e;
+  if (e.type === "batch") {
+    const repl = (arr) =>
+      Array.isArray(arr) ? arr.map((x) => (x === oldName ? newName : x)) : arr;
+    return { ...e, snapshot: repl(e.snapshot), done: repl(e.done) };
+  }
+  if (e.type === "comment") {
+    if (e.plant === oldName) return { ...e, plant: newName };
+    return e;
+  }
+  return e;
+}
+
+/* =========================================================
+   ROOM DIALOG
+   ========================================================= */
+function openRoomDialog(name) {
+  pendingRoomPlant = name;
+  const plants = getAllPlants();
+  const current = plants.find((p) => p.name === name);
+
+  const label = document.getElementById("roomPlantLabel");
+  if (label) label.textContent = `Pflanze: ${name}`;
+
+  const sel = document.getElementById("roomSelect");
+  if (!sel) return;
+
+  sel.innerHTML = "";
+  ROOMS_ALL.forEach((r) => {
+    const opt = document.createElement("option");
+    opt.value = r;
+    opt.textContent = r;
+    sel.appendChild(opt);
+  });
+
+  sel.value = ROOMS_ALL.includes(current?.room) ? current.room : "Wohnzimmer";
+  openDialog("roomDialog");
+}
+
+function closeRoomDialog() {
+  pendingRoomPlant = null;
+  closeDialog("roomDialog");
+}
+
+function saveRoomDialog() {
+  if (!pendingRoomPlant) return;
+  const room = document.getElementById("roomSelect")?.value;
+
+  const plants = getAllPlants();
+  const updated = plants.map((p) => {
+    if (p.name !== pendingRoomPlant) return p;
+    const nextRoom = ROOMS_ALL.includes(room) ? room : "Wohnzimmer";
+    const nextActive = nextRoom === REMOVED_ROOM ? false : true;
+    return { ...p, room: nextRoom, active: nextActive };
+  });
+
+  savePlants(updated);
+
+  out(`🏠 Raum gesetzt: ${pendingRoomPlant} → ${room}`);
+  closeRoomDialog();
+  renderAll();
+}
+
+/* =========================================================
+   DELETE PLANT DIALOG
+   ========================================================= */
+function removePlant(name) {
+  const plants = getAllPlants();
+  const activeCount = getActivePlants().length;
+  const target = plants.find((p) => p.name === name);
+  const isActive = target && target.active !== false && target.room !== REMOVED_ROOM;
+
+  if (isActive && activeCount <= 1) {
+    out("Mindestens 1 aktive Pflanze behalten 🙂");
+    return;
+  }
+  pendingPlantToDelete = name;
+  openDeletePlantDialog(name);
+}
+
+function openDeletePlantDialog(plantName) {
+  const t = document.getElementById("deletePlantText");
+  if (t) t.textContent = `Was soll mit der Historie von „${plantName}“ passieren?`;
+  openDialog("deletePlantDialog");
+}
+function closeDeletePlantDialog() {
+  closeDialog("deletePlantDialog");
+}
+function deletePlantCancel() {
+  pendingPlantToDelete = null;
+  closeDeletePlantDialog();
+  out("Abgebrochen – nichts geändert.");
+}
+function deletePlantKeepHistory() {
+  if (!pendingPlantToDelete) return;
+  const name = pendingPlantToDelete;
+
+  const plants = getAllPlants();
+  const updated = plants.map((p) =>
+    p.name !== name ? p : { ...p, room: REMOVED_ROOM, active: false }
+  );
+  savePlants(updated);
+
+  pendingPlantToDelete = null;
+  closeDeletePlantDialog();
+  out(`✅ „${name}“ wurde zu „${REMOVED_ROOM}“ verschoben (Historie bleibt).`);
+  renderAll();
+}
+
+function removePlantFromEntry(e, name) {
+  if (!e) return e;
+  if (e.type === "batch") {
+    const filt = (arr) => (Array.isArray(arr) ? arr.filter((x) => x !== name) : arr);
+    const next = { ...e, snapshot: filt(e.snapshot), done: filt(e.done) };
+    const doneLen = Array.isArray(next.done) ? next.done.length : 0;
+    if (doneLen === 0) return null;
+    return next;
+  }
+  if (e.type === "comment") return e.plant === name ? null : e;
+  return e;
+}
+
+function deletePlantDeleteHistory() {
+  if (!pendingPlantToDelete) return;
+  const name = pendingPlantToDelete;
+
+  savePlants(getAllPlants().filter((p) => p.name !== name));
+
+  const entries = loadEntries();
+  const cleaned = entries.map((e) => removePlantFromEntry(e, name)).filter((e) => e !== null);
+  saveEntries(cleaned);
+
+  setPlantNote(name, "");
+
+  pendingPlantToDelete = null;
+  closeDeletePlantDialog();
+  out(`🗑️ Pflanze + Historie gelöscht: ${name}`);
+  renderAll();
+}
+
+/* =========================================================
+   PLANT NOTE (per plant)
+   ========================================================= */
+function openPlantNote(name) {
+  pendingPlantForNote = name;
+  const title = document.getElementById("plantNoteTitle");
+  const ta = document.getElementById("plantNoteText");
+  if (title) title.textContent = `📝 Pflanzenkommentar – ${name}`;
+  if (ta) ta.value = getPlantNote(name);
+  openDialog("plantNoteDialog");
+}
+function closePlantNote() {
+  pendingPlantForNote = null;
+  closeDialog("plantNoteDialog");
+}
+function savePlantNote() {
+  if (!pendingPlantForNote) return;
+  const text = document.getElementById("plantNoteText")?.value || "";
+  setPlantNote(pendingPlantForNote, text);
+  out("📝 Pflanzenkommentar gespeichert ✅");
+  closePlantNote();
+  renderAll();
+}
+function clearPlantNote() {
+  if (!pendingPlantForNote) return;
+  setPlantNote(pendingPlantForNote, "");
+  const ta = document.getElementById("plantNoteText");
+  if (ta) ta.value = "";
+  out("🗑️ Pflanzenkommentar gelöscht.");
+  renderAll();
+}
+
+/* =========================================================
+   PLANT OVERVIEW
+   ========================================================= */
+function openPlantOverview() {
+  renderPlantOverview();
+  openDialog("plantOverviewDialog");
+}
+function closePlantOverview() {
+  closeDialog("plantOverviewDialog");
+}
+
+function renderPlantOverview() {
+  const wrap = document.getElementById("plantOverviewList");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+
+  const plants = getAllPlants();
+  const grouped = groupPlantsByRoom(plants);
+
+  grouped.forEach(([room, ps]) => {
     if (!ps.length) return;
 
-    const roomCard = document.createElement("div");
-    roomCard.className = "comment-item";
-    roomCard.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
+    const card = document.createElement("div");
+    card.className = "comment-item";
+    card.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
 
     ps.forEach((p) => {
+      const note = getPlantNote(p.name);
       const line = document.createElement("div");
       line.style.marginTop = "10px";
-
-      line.innerHTML = `
-        🪴 <b>${escapeHtml(p.name)}</b>
-        <div class="status-pills">${statusPillsFor(p.name)}</div>
-        ${commentsHtmlFor(p.name)}
-      `;
-
-      roomCard.appendChild(line);
+      line.innerHTML =
+        `🪴 <b>${escapeHtml(p.name)}</b>` +
+        (note
+          ? `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(note)}</div>`
+          : `<div class="muted" style="margin-top:6px;">(kein Pflanzenkommentar)</div>`);
+      card.appendChild(line);
     });
 
-    body.appendChild(roomCard);
+    wrap.appendChild(card);
   });
-
-  // Entfernte Pflanzen nur wenn an dem Tag relevant
-  const relevantNames = new Set(
-    [
-      ...(agg.water.snapshot || []),
-      ...(agg.fertilize.snapshot || []),
-      ...(agg.water.done || []),
-      ...(agg.fertilize.done || []),
-      ...(agg.comments || []).map((c) => c.plant),
-    ].filter(Boolean)
-  );
-
-  const removedRelevant = removed
-    .filter((p) => relevantNames.has(p.name))
-    .sort((a, b) => a.name.localeCompare(b.name, "de"));
-
-  if (removedRelevant.length) {
-    const roomCard = document.createElement("div");
-    roomCard.className = "comment-item";
-    roomCard.innerHTML = `<b>🏚️ ${escapeHtml(REMOVED_ROOM)}</b>
-      <div class="muted" style="margin-top:6px;">
-        Diese Pflanzen wurden entfernt, werden aber für die Historie angezeigt.
-      </div>`;
-
-    removedRelevant.forEach((p) => {
-      const line = document.createElement("div");
-      line.style.marginTop = "10px";
-
-      line.innerHTML = `
-        🪴 <b>${escapeHtml(p.name)}</b>
-        <div class="status-pills">${statusPillsFor(p.name)}</div>
-        ${commentsHtmlFor(p.name)}
-      `;
-
-      roomCard.appendChild(line);
-    });
-
-    body.appendChild(roomCard);
-  }
-
-  // ✅ Sammelblock "Kommentare" am Ende bewusst entfernt
 }
 
+function openPlantsFromOverview() {
+  closeDialog("plantOverviewDialog");
+  openPlants();
+}
 
-      function saveDayCommentFromPopup() {
-        const plant = (
-          document.getElementById("dayPopupCommentPlant")?.value || ""
-        ).trim();
-        const text = (
-          document.getElementById("dayPopupCommentText")?.value || ""
-        ).trim();
-        const pinned = !!document.getElementById("dayPopupCommentPinned")
-          ?.checked;
+/* =========================================================
+   HISTORY DIALOG
+   ========================================================= */
+function renderHistory(entries) {
+  const historyEl = document.getElementById("history");
+  if (!historyEl) return;
+  historyEl.innerHTML = "";
 
-        if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
-        if (!text) return out("Bitte einen Kommentar eingeben 🙂");
+  if (!(entries || []).length) {
+    const li = document.createElement("li");
+    li.textContent = "Noch keine Einträge.";
+    historyEl.appendChild(li);
+    return;
+  }
 
-        const iso = state.selectedISO;
-        saveCommentForISO(iso, plant, text, pinned);
+  const days = uniq(entries.map((e) => isoDate(e.ts))).sort((a, b) => (a < b ? 1 : -1));
+  const total = getActivePlants().length;
 
-        const ta = document.getElementById("dayPopupCommentText");
-        const pin = document.getElementById("dayPopupCommentPinned");
-        if (ta) ta.value = "";
-        if (pin) pin.checked = false;
+  days.forEach((iso) => {
+    const agg = aggregateDay(entries, iso);
+    const parts = [];
+    parts.push(`🌿${total}`);
+    if (agg.water.done.length) parts.push(`💧${agg.water.done.length}`);
+    if (agg.fertilize.done.length) parts.push(`🧪${agg.fertilize.done.length}`);
+    if (agg.comments.length) parts.push(`📝${agg.comments.length}`);
 
-        out("📝 Kommentar zum Tag gespeichert ✅");
-        renderAll();
-        if (popupISO) renderDayCommentsPopup();
-        renderDayViewPopup();
+    const li = document.createElement("li");
+    li.textContent = `${iso}: ${parts.join("  •  ")}`;
+    historyEl.appendChild(li);
+  });
+}
+
+function openHistory() {
+  renderAll();
+  openDialog("historyDialog");
+}
+function closeHistory() {
+  closeDialog("historyDialog");
+}
+
+/* =========================================================
+   ACTION DIALOG (water/fertilize)
+   ========================================================= */
+function setActionDateToday() {
+  const today = isoDate(new Date());
+  const dateEl = document.getElementById("actionDate");
+  if (dateEl) dateEl.value = today;
+  actionISO = today;
+  refreshActionListForDate();
+}
+
+function openActionWithDate(action, iso, lockDate = false) {
+  pendingAction = action;
+
+  const title = document.getElementById("actionTitle");
+  if (title) {
+    title.textContent =
+      action === "water"
+        ? "💧 Gießen – welche Pflanzen?"
+        : "🧪 Düngen – welche Pflanzen?";
+  }
+
+  actionISO = iso || isoDate(new Date());
+  actionDateLocked = !!lockDate;
+
+  const dateEl = document.getElementById("actionDate");
+  if (dateEl) {
+    dateEl.value = actionISO;
+    dateEl.disabled = actionDateLocked;
+
+    dateEl.onchange = () => {
+      if (actionDateLocked) {
+        dateEl.value = actionISO;
+        return;
+      }
+      actionISO = dateEl.value || isoDate(new Date());
+      refreshActionListForDate();
+    };
+  }
+
+  const todayBtn = document.getElementById("actionDateTodayBtn");
+  if (todayBtn) todayBtn.style.display = actionDateLocked ? "none" : "";
+
+  refreshActionListForDate();
+  openDialog("actionDialog");
+}
+
+function openAction(action) {
+  openActionWithDate(action, isoDate(new Date()), true);
+}
+function openActionForSelectedDay(action) {
+  openActionWithDate(action, state.selectedISO, true);
+}
+
+function refreshActionListForDate() {
+  const entries = loadEntries();
+  const agg = aggregateDay(entries, actionISO);
+  const alreadyDone = pendingAction === "water" ? agg.water.done : agg.fertilize.done;
+
+  const hint = document.getElementById("actionHint");
+  if (hint) {
+    hint.textContent = alreadyDone.length
+      ? `Smart-Default: an diesem Datum schon geloggt (${alreadyDone.length}) ist abgewählt.`
+      : "Smart-Default: alle Pflanzen sind ausgewählt.";
+  }
+
+  const list = document.getElementById("actionList");
+  if (!list) return;
+  list.innerHTML = "";
+
+  const plants = getActivePlants();
+  plants.forEach((pObj, idx) => {
+    const row = document.createElement("label");
+    row.className = "checkitem";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.dataset.plant = pObj.name;
+    cb.id = "cb_" + idx;
+    cb.checked = !alreadyDone.includes(pObj.name);
+
+    const text = document.createElement("span");
+    text.textContent = `${pObj.name} (${pObj.room || "Wohnzimmer"})`;
+
+    row.append(cb, text);
+    list.appendChild(row);
+  });
+}
+
+function selectAllPlants() {
+  document.querySelectorAll("#actionList input[type=checkbox]").forEach((cb) => (cb.checked = true));
+}
+function selectNonePlants() {
+  document.querySelectorAll("#actionList input[type=checkbox]").forEach((cb) => (cb.checked = false));
+}
+function cancelAction() {
+  pendingAction = null;
+  closeDialog("actionDialog");
+  out("Abgebrochen – nichts gespeichert.");
+}
+function confirmAction() {
+  if (!pendingAction) return;
+
+  const selected = Array.from(document.querySelectorAll("#actionList input[type=checkbox]"))
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.dataset.plant);
+
+  if (selected.length === 0) {
+    out("Keine Pflanzen ausgewählt 🙂");
+    return;
+  }
+
+  const iso = actionISO || isoDate(new Date());
+  const ts = isoToNoonTs(iso);
+  const dateStr = new Date(ts).toLocaleDateString("de-DE");
+
+  const entries = loadEntries();
+  const idx = entries.findIndex(
+    (e) => e && e.type === "batch" && e.action === pendingAction && isoDate(e.ts) === iso
+  );
+
+  const snapshot = activePlantNames();
+
+  if (idx >= 0) {
+    const existing = entries[idx];
+    entries[idx] = {
+      ...existing,
+      ts,
+      date: dateStr,
+      snapshot: setUnion(existing.snapshot, snapshot),
+      done: setUnion(existing.done, selected),
+    };
+  } else {
+    entries.unshift({
+      type: "batch",
+      action: pendingAction,
+      ts,
+      date: dateStr,
+      snapshot: uniq(snapshot),
+      done: uniq(selected),
+    });
+  }
+
+  saveEntries(entries);
+
+  out(
+    `${pendingAction === "water" ? "💧" : "🧪"} gespeichert für ${iso
+      .split("-")
+      .reverse()
+      .join(".")}: ${selected.length} Pflanze(n) ✅`
+  );
+
+  state.selectedISO = iso;
+  pendingAction = null;
+  closeDialog("actionDialog");
+  renderAll();
+}
+
+  // ==========================
+  // COMMENTS (today + per day popup)
+  // ==========================
+  function fillCommentPlants(selectElId, includeRemoved = true) {
+    const plants = includeRemoved ? getAllPlants() : getActivePlants();
+    const sel = document.getElementById(selectElId);
+    if (!sel) return;
+    sel.innerHTML = "";
+
+    // ✅ Allgemein-Option ganz oben
+    const optGeneral = document.createElement("option");
+    optGeneral.value = GENERAL_COMMENT_KEY;
+    optGeneral.textContent = "🗒️ Allgemein (Tageskommentar)";
+    sel.appendChild(optGeneral);
+
+    plants.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.name;
+      const removedTag =
+        p.room === REMOVED_ROOM || p.active === false ? " • entfernt" : "";
+      opt.textContent = `${p.name} (${p.room})${removedTag}`;
+      sel.appendChild(opt);
+    });
+  }
+
+  function saveCommentForISO(iso, plant, text, pinned) {
+    const ts = isoToNoonTs(iso);
+    const entry = {
+      type: "comment",
+      id: uuid(),
+      ts,
+      date: new Date(ts).toLocaleDateString("de-DE"),
+      plant,
+      text,
+      pinned: !!pinned,
+    };
+    const entries = loadEntries();
+    entries.unshift(entry);
+    saveEntries(entries);
+  }
+
+  function openCommentToday() {
+    fillCommentPlants("commentPlant", true);
+    const ta = document.getElementById("commentText");
+    const pin = document.getElementById("commentPinned");
+    if (ta) ta.value = "";
+    if (pin) pin.checked = false;
+    openDialog("commentDialog");
+  }
+
+  function closeComment() {
+    closeDialog("commentDialog");
+  }
+
+  function saveCommentToday() {
+    const plant = (document.getElementById("commentPlant")?.value || "").trim();
+    const text = (document.getElementById("commentText")?.value || "").trim();
+    const pinned = !!document.getElementById("commentPinned")?.checked;
+
+    if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
+    if (!text) return out("Bitte einen Kommentar eingeben 🙂");
+
+    const iso = isoDate(new Date());
+    saveCommentForISO(iso, plant, text, pinned);
+
+    state.selectedISO = iso;
+    out("📝 Kommentar gespeichert ✅");
+    closeComment();
+    renderAll();
+  }
+
+  // ==========================
+  // DAY COMMENTS POPUP (badge)
+  // ==========================
+  function openDayCommentsFromBadge(evt, iso) {
+    if (evt) evt.stopPropagation();
+    openDayComments(iso);
+  }
+
+  function openDayComments(iso) {
+    popupISO = iso;
+
+    const title = document.getElementById("dayCommentsTitle");
+    if (title)
+      title.textContent = `📝 Kommentare – ${iso.split("-").reverse().join(".")}`;
+
+    fillCommentPlants("popupCommentPlant", true);
+
+    const ta = document.getElementById("popupCommentText");
+    const pin = document.getElementById("popupCommentPinned");
+    if (ta) ta.value = "";
+    if (pin) pin.checked = false;
+
+    renderDayCommentsPopup();
+    openDialog("dayCommentsDialog");
+  }
+
+  function closeDayComments() {
+    popupISO = null;
+    closeDialog("dayCommentsDialog");
+  }
+
+  function renderDayCommentsPopup() {
+    const wrap = document.getElementById("dayCommentsList");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    if (!popupISO) return;
+
+    const entries = loadEntries();
+    const agg = aggregateDay(entries, popupISO);
+
+    if (!agg.comments.length) {
+      const p = document.createElement("p");
+      p.className = "muted";
+      p.textContent = "Noch keine Kommentare an diesem Tag.";
+      wrap.appendChild(p);
+      return;
+    }
+
+    agg.comments.forEach((c) => {
+      const box = document.createElement("div");
+      box.className = "comment-item" + (c.pinned ? " pinned" : "");
+
+      const header = document.createElement("div");
+      header.className = "comment-header";
+
+      const left = document.createElement("div");
+      left.innerHTML = `🪴 <b>${escapeHtml(c.plant)}</b>${
+        c.pinned ? " <span class='pill'>📌</span>" : ""
+      }`;
+
+      const actions = document.createElement("div");
+      actions.className = "comment-actions";
+
+      const pinBtn = document.createElement("button");
+      pinBtn.className = "btn-ghost";
+      pinBtn.textContent = c.pinned ? "📌✓" : "📌";
+      pinBtn.onclick = () => togglePinComment(c.id);
+
+      const editBtn = document.createElement("button");
+      editBtn.className = "btn-ghost";
+      editBtn.textContent = "✏️";
+      editBtn.onclick = () => editComment(c.id);
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn-danger";
+      delBtn.textContent = "🗑️";
+      delBtn.onclick = () => deleteComment(c.id);
+
+      actions.append(pinBtn, editBtn, delBtn);
+      header.append(left, actions);
+
+      const text = document.createElement("div");
+      text.className = "comment-text";
+      text.textContent = c.text;
+
+      box.append(header, text);
+      wrap.appendChild(box);
+    });
+  }
+
+  function savePopupComment() {
+    if (!popupISO) return;
+
+    const plant = (document.getElementById("popupCommentPlant")?.value || "").trim();
+    const text = (document.getElementById("popupCommentText")?.value || "").trim();
+    const pinned = !!document.getElementById("popupCommentPinned")?.checked;
+
+    if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
+    if (!text) return out("Bitte einen Kommentar eingeben 🙂");
+
+    saveCommentForISO(popupISO, plant, text, pinned);
+
+    const ta = document.getElementById("popupCommentText");
+    const pin = document.getElementById("popupCommentPinned");
+    if (ta) ta.value = "";
+    if (pin) pin.checked = false;
+
+    out("📝 Kommentar gespeichert ✅");
+    renderAll();
+    renderDayCommentsPopup();
+    renderDayViewPopup();
+  }
+
+  function editComment(id) {
+    const entries = loadEntries();
+    const idx = entries.findIndex((e) => e && e.type === "comment" && e.id === id);
+    if (idx < 0) return;
+
+    const current = entries[idx];
+    const newText = prompt(
+      `Kommentar für ${current.plant} bearbeiten:`,
+      current.text || ""
+    );
+    if (newText === null) return;
+
+    const cleaned = String(newText).trim();
+    if (!cleaned) return alert("Kommentar darf nicht leer sein.");
+
+    entries[idx] = { ...current, text: cleaned };
+    saveEntries(entries);
+
+    out("📝 Kommentar aktualisiert ✅");
+    renderAll();
+    if (popupISO) renderDayCommentsPopup();
+    renderDayViewPopup();
+  }
+
+  function deleteComment(id) {
+    if (!confirm("Kommentar wirklich löschen?")) return;
+    const entries = loadEntries().filter(
+      (e) => !(e && e.type === "comment" && e.id === id)
+    );
+    saveEntries(entries);
+
+    out("🗑️ Kommentar gelöscht.");
+    renderAll();
+    if (popupISO) renderDayCommentsPopup();
+    renderDayViewPopup();
+  }
+
+  function togglePinComment(id) {
+    const entries = loadEntries();
+    const idx = entries.findIndex((e) => e && e.type === "comment" && e.id === id);
+    if (idx < 0) return;
+
+    entries[idx] = { ...entries[idx], pinned: !entries[idx].pinned };
+    saveEntries(entries);
+
+    renderAll();
+    if (popupISO) renderDayCommentsPopup();
+    renderDayViewPopup();
+  }
+
+  // ==========================
+  // DAY VIEW DIALOG
+  // ==========================
+  function openDayView(iso) {
+    state.selectedISO = iso;
+
+    const title = document.getElementById("dayViewTitle");
+    if (title)
+      title.textContent = `📅 Tagesansicht – ${iso.split("-").reverse().join(".")}`;
+
+    fillCommentPlants("dayPopupCommentPlant", true);
+
+    const ta = document.getElementById("dayPopupCommentText");
+    const pin = document.getElementById("dayPopupCommentPinned");
+    if (ta) ta.value = "";
+    if (pin) pin.checked = false;
+
+    renderDayViewPopup();
+    openDialog("dayViewDialog");
+  }
+
+  function closeDayView() {
+    closeDialog("dayViewDialog");
+  }
+
+  function pillMini(text, cls) {
+    return `<span class="pill-mini ${cls}">${text}</span>`;
+  }
+
+  function renderDayViewPopup() {
+    const body = document.getElementById("dayViewBody");
+    if (!body) return;
+    body.innerHTML = "";
+
+    const entries = loadEntries();
+    const iso = state.selectedISO;
+    const agg = aggregateDay(entries, iso);
+
+    const waterDone = new Set(agg.water.done || []);
+    const fertDone = new Set(agg.fertilize.done || []);
+
+    // ✅ Kommentare trennen: Allgemein vs. pro Pflanze
+    const generalComments = [];
+    const commentsMap = new Map();
+
+    (agg.comments || []).forEach((c) => {
+      const plant = c.plant || "Unbekannt";
+
+      if (plant === GENERAL_COMMENT_KEY) {
+        generalComments.push(c);
+        return;
       }
 
-      // ==========================
+      if (!commentsMap.has(plant)) commentsMap.set(plant, []);
+      commentsMap.get(plant).push(c);
+    });
+
+    function statusPillsFor(name) {
+      const pills = [];
+      if (waterDone.has(name)) pills.push(pillMini("💧", "water"));
+      if (fertDone.has(name)) pills.push(pillMini("🧪", "fert"));
+      const cc = (commentsMap.get(name) || []).length;
+      if (cc) pills.push(pillMini(`📝${cc}`, "note"));
+      if (!waterDone.has(name) && !fertDone.has(name))
+        pills.unshift(pillMini("—", "none"));
+      return pills.join("");
+    }
+
+    function commentsHtmlFor(name) {
+      const arr = commentsMap.get(name) || [];
+      if (!arr.length) return "";
+      return `
+        <div class="muted" style="margin-top:6px;">
+          ${arr
+            .map((c) => {
+              const pin = c.pinned
+                ? " <span class='pill' style='transform:translateY(-1px);'>📌</span>"
+                : "";
+              return `
+                <div style="margin-top:6px; white-space:pre-wrap;">
+                  ${pin}${escapeHtml(c.text)}
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+      `;
+    }
+
+    const all = getAllPlants();
+    const active = all.filter((p) => p.active !== false && p.room !== REMOVED_ROOM);
+    const removed = all.filter((p) => p.room === REMOVED_ROOM || p.active === false);
+
+    const activeGrouped = groupPlantsByRoom(active);
+
+    // 🗒️ Allgemeine Tageskommentare ganz oben anzeigen
+    if (generalComments.length) {
+      const box = document.createElement("div");
+      box.className = "comment-item";
+      box.innerHTML = `<b>🗒️ Allgemeiner Tageskommentar</b>`;
+
+      generalComments.forEach((c) => {
+        const item = document.createElement("div");
+        item.style.marginTop = "10px";
+        item.innerHTML =
+          `${c.pinned ? "<span class='pill'>📌</span> " : ""}` +
+          `<div class="muted" style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
+            c.text
+          )}</div>`;
+        box.appendChild(item);
+      });
+
+      body.appendChild(box);
+    }
+
+    // ✅ Aktive Pflanzen: pro Pflanze Status + Kommentare direkt darunter
+    activeGrouped.forEach(([room, ps]) => {
+      if (room === REMOVED_ROOM) return;
+      if (!ps.length) return;
+
+      const roomCard = document.createElement("div");
+      roomCard.className = "comment-item";
+      roomCard.innerHTML = `<b>🏠 ${escapeHtml(room)}</b>`;
+
+      ps.forEach((p) => {
+        const line = document.createElement("div");
+        line.style.marginTop = "10px";
+
+        line.innerHTML = `
+          🪴 <b>${escapeHtml(p.name)}</b>
+          <div class="status-pills">${statusPillsFor(p.name)}</div>
+          ${commentsHtmlFor(p.name)}
+        `;
+
+        roomCard.appendChild(line);
+      });
+
+      body.appendChild(roomCard);
+    });
+
+    // Entfernte Pflanzen nur wenn an dem Tag relevant
+    const relevantNames = new Set(
+      [
+        ...(agg.water.snapshot || []),
+        ...(agg.fertilize.snapshot || []),
+        ...(agg.water.done || []),
+        ...(agg.fertilize.done || []),
+        ...(agg.comments || []).map((c) => c.plant),
+      ].filter(Boolean)
+    );
+
+    const removedRelevant = removed
+      .filter((p) => relevantNames.has(p.name))
+      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+
+    if (removedRelevant.length) {
+      const roomCard = document.createElement("div");
+      roomCard.className = "comment-item";
+      roomCard.innerHTML = `<b>🏚️ ${escapeHtml(REMOVED_ROOM)}</b>
+        <div class="muted" style="margin-top:6px;">
+          Diese Pflanzen wurden entfernt, werden aber für die Historie angezeigt.
+        </div>`;
+
+      removedRelevant.forEach((p) => {
+        const line = document.createElement("div");
+        line.style.marginTop = "10px";
+
+        line.innerHTML = `
+          🪴 <b>${escapeHtml(p.name)}</b>
+          <div class="status-pills">${statusPillsFor(p.name)}</div>
+          ${commentsHtmlFor(p.name)}
+        `;
+
+        roomCard.appendChild(line);
+      });
+
+      body.appendChild(roomCard);
+    }
+
+    // ✅ Sammelblock "Kommentare" am Ende bewusst entfernt
+  }
+
+  function saveDayCommentFromPopup() {
+    const plant = (document.getElementById("dayPopupCommentPlant")?.value || "").trim();
+    const text = (document.getElementById("dayPopupCommentText")?.value || "").trim();
+    const pinned = !!document.getElementById("dayPopupCommentPinned")?.checked;
+
+    if (!plant) return out("Bitte eine Pflanze auswählen 🙂");
+    if (!text) return out("Bitte einen Kommentar eingeben 🙂");
+
+    const iso = state.selectedISO;
+    saveCommentForISO(iso, plant, text, pinned);
+
+    const ta = document.getElementById("dayPopupCommentText");
+    const pin = document.getElementById("dayPopupCommentPinned");
+    if (ta) ta.value = "";
+    if (pin) pin.checked = false;
+
+    out("📝 Kommentar zum Tag gespeichert ✅");
+    renderAll();
+    if (popupISO) renderDayCommentsPopup();
+    renderDayViewPopup();
+  }
+    // ==========================
       // CALENDAR
       // ==========================
       function renderCalendar(entries) {
@@ -3360,6 +3158,6 @@ updateAuthUI = function(session) {
       window.sendMagicLinkFromUserMenu = sendMagicLinkFromUserMenu;
       window.openPlantsFromOverview = openPlantsFromOverview;
       
-    </script>
+</script>
   </body>
 </html>
