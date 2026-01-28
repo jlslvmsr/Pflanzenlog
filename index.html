@@ -1326,10 +1326,13 @@ async function sbReplaceAll(table, payloads, tsGetter) {
 
   console.log(`☁️ [${table}] replaceAll für user`, userId);
 
-  const { error: delErr } = await supabaseClient
-    .from(table)
-    .delete()
-    .eq("user_id", userId);
+  const delPromise = supabaseClient
+  .from(table)
+  .delete()
+  .eq("user_id", userId);
+
+const { error: delErr } = await promiseTimeout(delPromise, 12000, `${table}.delete`);
+
 
   if (delErr) throw delErr;
 
@@ -1347,7 +1350,9 @@ async function sbReplaceAll(table, payloads, tsGetter) {
   const CHUNK = 200;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const slice = rows.slice(i, i + CHUNK);
-    const { error } = await supabaseClient.from(table).insert(slice);
+    const { error const insPromise = supabaseClient.from(table).insert(slice);
+const { error } = await promiseTimeout(insPromise, 12000, `${table}.insert`);
+ = await supabaseClient.from(table).insert(slice);
     if (error) throw error;
   }
 
@@ -1381,6 +1386,8 @@ function scheduleEntriesSync(entries) {
       await sbReplaceAll("entries", entries, (e) => e?.ts || Date.now());
       console.log("✅ entries synced");
       out("✅ Supabase Sync ok");
+      clearDirtyEntries();
+      updateQueueStatusHint();
     } catch (e) {
       console.error("❌ entries sync error (full):", e);
       const msg = e?.message || String(e);
@@ -1415,6 +1422,8 @@ function schedulePlantsSync(plants) {
       await sbReplaceAll("plants", plants, () => Date.now());
       console.log("✅ plants synced");
       out("✅ Supabase Sync ok");
+      clearDirtyPlants();
+      updateQueueStatusHint();
     } catch (e) {
       console.error("❌ plants sync error (full):", e);
       const msg = e?.message || String(e);
@@ -1448,6 +1457,8 @@ function scheduleNotesSync(map) {
       await sbReplaceAll("plant_notes", [map], () => Date.now());
       console.log("✅ plant_notes synced");
       out("✅ Supabase Sync ok");
+      clearDirtyNotes();
+      updateQueueStatusHint();
     } catch (e) {
       console.error("❌ plant_notes sync error (full):", e);
       const msg = e?.message || String(e);
@@ -1716,7 +1727,7 @@ if (supabaseClient) {
 
     // 2) Dann erst Supabase laden (jetzt ist Cloud aktuell)
     out("⬇️ Lade Daten von Supabase…");
-    await initFromSupabase();
+    await initFromSupabase_FAST();
 
     renderAll();
     out("✅ Alles synchronisiert.");
