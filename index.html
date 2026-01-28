@@ -1599,6 +1599,18 @@ async function autoSyncAllIfDirty() {
 async function initFromSupabase_FAST() {
   if (!supabaseClient) throw new Error("supabaseClient fehlt");
 
+// Wenn lokal pending Änderungen existieren, NICHT überschreiben
+const hasPending =
+  isDirty(DIRTY_ENTRIES_KEY) ||
+  isDirty(DIRTY_PLANTS_KEY) ||
+  isDirty(DIRTY_NOTES_KEY);
+
+if (hasPending) {
+  console.log("🟡 Pending local changes -> skip initFromSupabase overwrite");
+  out("🟡 Lokale Änderungen warten – erst synchronisieren…");
+  return;
+}
+  
   const results = await Promise.allSettled([
     sbFetchPayloads("entries"),
     sbFetchPayloads("plants"),
@@ -1697,21 +1709,24 @@ if (supabaseClient) {
 
     if (event === "SIGNED_IN") {
   try {
-    out("✅ Login erkannt. Lade Daten…");
+    out("✅ Login erkannt. Sync lokale Änderungen…");
 
-    // 1) Erst remote ziehen (damit du aktuelle Cloud-Daten siehst)
+    // 1) Erst lokale Queue hochschieben (wenn etwas offen ist)
+    await autoSyncAllIfDirty();
+
+    // 2) Dann erst Supabase laden (jetzt ist Cloud aktuell)
+    out("⬇️ Lade Daten von Supabase…");
     await initFromSupabase();
 
-    // 2) Dann queued local Änderungen pushen (Local gewinnt)
-    await autoSyncAllIfDirty();
-updateQueueStatusHint();
-    if (typeof renderAll === "function") renderAll();
-    out("✅ Sync bereit (iPhone/iPad)");
+    renderAll();
+    out("✅ Alles synchronisiert.");
   } catch (e) {
-    console.error("❌ After-login load/sync error:", e);
+    console.error("❌ After-login sync/load error:", e);
     out("❌ Fehler nach Login: " + (e?.message || e));
+    renderAll();
   }
 }
+
 
 
     if (event === "SIGNED_OUT") {
